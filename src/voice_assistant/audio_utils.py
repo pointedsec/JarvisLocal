@@ -25,6 +25,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'piper_model_path': 'models/es_ES-davefx-medium.onnx',
     'ollama_host': 'http://localhost:11434',
     'wakeword': 'hey jarvis',
+    'wakewords': 'hey jarvis, jarvis',
     'wakeword_threshold': 0.35,
     'vad_aggressiveness': 2,
     'silence_seconds': 0.3,
@@ -43,7 +44,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'gc_interval': 10,
     'memory_profiling': False,
     'trim_wake_word': True,
-    'max_phrase_duration': 15.0,
+    'max_phrase_duration': 20.0,
     'gain': 1.0,
 }       
 

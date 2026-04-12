@@ -2,6 +2,13 @@ import logging
 import ollama
 import gc
 from .audio_utils import MAX_HISTORY_MESSAGES, SENTENCE_END_PUNCTUATION
+from .web_search import (
+    is_football_query,
+    needs_web_search,
+    web_search,
+    format_search_results,
+    MANOLO_LAMA_STYLE,
+)
 
 class LLMHandler:
     def __init__(self, client: ollama.Client, args):
@@ -13,9 +20,43 @@ class LLMHandler:
     def reset_history(self):
         self.messages = [{'role': 'system', 'content': self.args.system_prompt}]
 
+    def _build_augmented_prompt(self, user_text: str) -> str:
+        """
+        Augments the user prompt with web search results and/or football style
+        instructions when needed.
+
+        Returns the (possibly augmented) user text to send to the LLM.
+        """
+        parts = []
+
+        # Check if the query is football-related
+        is_football = is_football_query(user_text)
+        if is_football:
+            logging.info("Football query detected — activating Manolo Lama mode")
+            parts.append(MANOLO_LAMA_STYLE)
+
+        # Check if the query needs current information from the internet
+        if needs_web_search(user_text):
+            logging.info("Query may need current info — performing web search")
+            results = web_search(user_text)
+            if results:
+                context = format_search_results(results)
+                parts.append(context)
+                logging.debug(f"Web search context added ({len(results)} results)")
+            else:
+                logging.debug("No web search results found")
+
+        if parts:
+            # Prepend the augmented context to the user text
+            augmented = "\n\n".join(parts) + "\n\n" + user_text
+            return augmented
+
+        return user_text
+
     def chat_stream(self, user_text: str):
         """Yields tokens from the LLM response."""
-        self.messages.append({'role': 'user', 'content': user_text})
+        augmented_text = self._build_augmented_prompt(user_text)
+        self.messages.append({'role': 'user', 'content': augmented_text})
         self._prune_history()
         
         full_response = ""
