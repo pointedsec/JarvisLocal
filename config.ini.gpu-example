@@ -1,8 +1,8 @@
 [Models]
 ollama_model = llama3
-whisper_model = base.en
+whisper_model = small
 wakeword_model_path = models/hey_glados.onnx
-piper_model_path = models/en_US-lessac-medium.onnx
+piper_model_path = models/es_ES-davefx-medium.onnx
 ollama_host = http://localhost:11434
 
 [Functionality]
@@ -12,26 +12,27 @@ vad_aggressiveness = 2
 silence_seconds = 0.7
 listen_timeout = 5.0
 pre_buffer_ms = 400
-system_prompt = You are a friendly, concise, and intelligent voice assistant named GLaDOS. Keep your responses short and witty.
+whisper_language = es
+system_prompt = Eres un asistente de voz amigable, conciso e inteligente llamado GLaDOS. SIEMPRE responde en español. Mantén tus respuestas cortas e ingeniosas.
 device_index = None
 piper_output_device_index = None
-gain = 1.0 # Mic input gain. 1.0 = no change.
+gain = 1.0 # Ganancia del micrófono. 1.0 = sin cambio.
 max_words_per_command = 65
-max_phrase_duration = 20.0 # How long to record a command before stopping
+max_phrase_duration = 20.0 # Duración máxima de grabación de un comando
 
 
-# --- GPU Optimizations for Faster Computer ---
+# --- Optimizaciones GPU para computadores más potentes ---
 whisper_device = cuda
 whisper_compute_type = float16
-# --- Faster Model (can be changed to a larger, more capable one) ---
-# Note: Changing 'base.en' to a larger model like 'medium.en' or 'large-v2' 
-# will increase accuracy and quality but *only* work well with a powerful GPU 
-# and the 'cuda' + 'float16' settings below.
+# --- Modelo más rápido (se puede cambiar a uno más grande y capaz) ---
+# Nota: Cambiar 'small' a un modelo más grande como 'medium' o 'large-v2' 
+# aumentará la precisión y calidad pero *solo* funcionará bien con una GPU potente 
+# y las configuraciones de 'cuda' + 'float16' anteriores.
 # whisper_model = large-v2
-# --- End Faster Model ---
+# --- Fin Modelo más rápido ---
 whisper_avg_logprob = -1.0
 whisper_no_speech_prob = 0.6
 
 max_history_tokens = 4096 
-# Increased history token limit: A faster computer can handle a larger context size.
+# Mayor límite de tokens de historial: Un computador más potente puede manejar un contexto mayor.
 trim_wake_word = true

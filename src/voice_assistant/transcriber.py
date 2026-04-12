@@ -18,6 +18,7 @@ class Transcriber:
         self.args = args
         self.device = args.whisper_device
         self.compute_type = args.whisper_compute_type
+        self.language = getattr(args, 'whisper_language', 'es')
         
         # Auto-detect CUDA
         if self.device == 'cuda' and (not TORCH_AVAILABLE or not torch.cuda.is_available()):
@@ -45,7 +46,7 @@ class Transcriber:
         try:
             segments, info = self.model.transcribe(
                 audio_np, 
-                language="en",
+                language=self.language,
                 vad_filter=False,  # We've already done VAD
                 condition_on_previous_text=True,
                 log_prob_threshold=None,

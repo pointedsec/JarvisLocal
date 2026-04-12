@@ -20,9 +20,10 @@ class TestTranscriber(unittest.TestCase):
     def setUp(self):
         """Set up a mock model and args for each test."""
         self.args = argparse.Namespace(
-            whisper_model="tiny.en",
+            whisper_model="tiny",
             whisper_device="cpu",
             whisper_compute_type="int8",
+            whisper_language="es",
             whisper_avg_logprob=-0.5,
             whisper_no_speech_prob=0.7
         )
@@ -32,7 +33,7 @@ class TestTranscriber(unittest.TestCase):
         """Test successful initialization on CPU."""
         transcriber = Transcriber(self.args)
         mock_whisper_model.assert_called_once_with(
-            "tiny.en",
+            "tiny",
             device="cpu",
             compute_type="int8"
         )
@@ -48,7 +49,7 @@ class TestTranscriber(unittest.TestCase):
         
         # Check that it fell back to CPU
         mock_whisper_model.assert_called_once_with(
-            "tiny.en",
+            "tiny",
             device="cpu",
             compute_type="int8"
         )
@@ -59,11 +60,11 @@ class TestTranscriber(unittest.TestCase):
         """Test a successful transcription call."""
         # Mock the return value of model.transcribe
         mock_segment = MagicMock()
-        mock_segment.text = "Hello world"
+        mock_segment.text = "Hola mundo"
         mock_segment.avg_logprob = -0.2
         mock_segment.no_speech_prob = 0.1
         
-        mock_info = MagicMock(language="en", language_probability=0.99)
+        mock_info = MagicMock(language="es", language_probability=0.99)
         
         mock_model_instance = mock_whisper_model.return_value
         mock_model_instance.transcribe.return_value = ([mock_segment], mock_info)
@@ -73,7 +74,7 @@ class TestTranscriber(unittest.TestCase):
         
         result = transcriber.transcribe(audio_np)
         
-        self.assertEqual(result, "Hello world")
+        self.assertEqual(result, "Hola mundo")
         mock_model_instance.transcribe.assert_called_once()
 
     @patch('faster_whisper.WhisperModel')
@@ -116,11 +117,11 @@ class TestTranscriber(unittest.TestCase):
         bad_nospeech_segment.avg_logprob = -0.2
         bad_nospeech_segment.no_speech_prob = 0.9
 
-        mock_info = MagicMock(language="en", language_probability=0.99)
+        mock_info = MagicMock(language="es", language_probability=0.99)
         
         mock_model_instance = mock_whisper_model.return_value
         mock_model_instance.transcribe.return_value = (
-            [good_segment, bad_logprob_.pysegment, bad_nospeech_segment], 
+            [good_segment, bad_logprob_segment, bad_nospeech_segment], 
             mock_info
         )
 
