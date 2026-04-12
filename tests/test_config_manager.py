@@ -20,13 +20,14 @@ class TestConfigManager(unittest.TestCase):
         Test that load_config_and_args returns default settings when
         config.ini does not exist and no command-line arguments are provided.
         """
-        # Mock command-line arguments to be an empty Namespace
-        mock_parse_args.return_value = argparse.Namespace(
+        # Mock command-line arguments with all required attributes
+        mock_namespace = argparse.Namespace(
             list_devices=False, 
             list_output_devices=False,
             debug=False,
-            system_prompt=DEFAULT_SETTINGS['system_prompt'] # Set default to avoid file read
+            **DEFAULT_SETTINGS
         )
+        mock_parse_args.return_value = mock_namespace
 
         # Call the function
         args, config, should_exit = load_config_and_args()
