@@ -1,182 +1,204 @@
-# 🤖 Ollama Voice Assistant (STT, LLM, TTS)
+# 🤖 Asistente de Voz Local con Ollama (STT, LLM, TTS) — OrangePi Edition
 
-A simple, hands-free Python voice assistant that runs 100% locally. This script uses openwakeword for wakeword detection, webrtcvad for silence detection, OpenAI's Whisper for transcription, and Ollama for generative AI responses.
+Un asistente de voz manos libres en Python que funciona 100% localmente, optimizado para **OrangePi con 8GB de RAM** y configurado para **escuchar y responder siempre en español**. Utiliza openwakeword para detección de palabra clave, webrtcvad para detección de silencio, Whisper de OpenAI para transcripción, y Ollama para respuestas generativas con IA.
 
 ```mermaid
 flowchart LR
-    A[Microphone] --> B(openwakeword);
+    A[Micrófono] --> B(openwakeword);
     B -- "hey jarvis" --> C(webrtcvad);
-    C -- "Records until silence" --> D[faster-whisper STT];
-    D -- "Transcribes audio" --> E[Ollama LLM];
-    E -- "Generates streaming response" --> F[Piper TTS];
-    F -- "Speaks response" --> G[Speaker];
+    C -- "Graba hasta silencio" --> D[faster-whisper STT];
+    D -- "Transcribe audio en español" --> E[Ollama LLM];
+    E -- "Genera respuesta en español" --> F[Piper TTS];
+    F -- "Habla la respuesta" --> G[Altavoz];
 ```
 
-## 💡 Features
-- **100% Local**: No cloud services are required for STT, TTS, or the LLM.
-- **Hands-Free**: Uses openwakeword for wakeword detection.
-- **Low-Latency TTS**: Uses the Piper TTS engine for fast, high-quality voice output.
-- **Optimized STT**: Leverages faster-whisper models for efficient and accurate speech-to-text.
-- **Smart Recording**: Uses webrtcvad (Voice Activity Detection) to automatically stop recording when you finish speaking.
-- **Flexible LLM**: Easily configurable to use any model supported by your local Ollama instance (e.g., llama3, mistral, phi3).
-- **Cross-Platform Audio**: Uses sounddevice for audio input/output.
-- **Configurable**: Settings are adjustable via `config.ini` and command-line arguments.
+## 💡 Características
+- **100% Local**: No se requieren servicios en la nube para STT, TTS ni el LLM.
+- **Manos Libres**: Usa openwakeword para detección de palabra clave.
+- **TTS de Baja Latencia**: Usa el motor Piper TTS con voz en español para una salida de voz rápida y de alta calidad.
+- **STT Optimizado**: Usa modelos faster-whisper multilingüe para transcripción precisa en español.
+- **Grabación Inteligente**: Usa webrtcvad (Detección de Actividad de Voz) para dejar de grabar automáticamente cuando dejas de hablar.
+- **LLM Flexible**: Fácilmente configurable para usar cualquier modelo soportado por tu instancia local de Ollama (ej. llama3, mistral, phi3).
+- **Audio Multiplataforma**: Usa sounddevice para entrada/salida de audio.
+- **Configurable**: Los ajustes se pueden modificar vía `config.ini` y argumentos de línea de comandos.
+- **Optimizado para OrangePi**: Configurado para CPU ARM con 8GB de RAM, usando modelos ligeros y configuración `int8`.
 
-## 🔩 1. Prerequisites
-Before you begin, ensure you have the following installed and running:
+## 🔩 1. Requisitos Previos
 
-### 🦙 A. Ollama
-You must have the Ollama application installed and running.
+### 🍊 A. Hardware
+- **OrangePi** (u otra SBC ARM64) con al menos **8GB de RAM**
+- Micrófono USB o integrado
+- Altavoz o salida de audio
 
-### 📦 B. Pull an Ollama Model
-You need at least one model downloaded for Ollama to use.
+### 🦙 B. Ollama
+Debes tener la aplicación Ollama instalada y ejecutándose en tu OrangePi.
+
 ```bash
-# The default model is llama3
+# Instalar Ollama en ARM64
+curl -fsSL https://ollama.ai/install.sh | sh
+```
+
+### 📦 C. Descargar un Modelo de Ollama
+Necesitas al menos un modelo descargado para que Ollama funcione.
+```bash
+# El modelo por defecto es llama3 (funciona bien con 8GB de RAM)
 ollama pull llama3
+
+# Alternativa más ligera si necesitas más rendimiento:
+# ollama pull phi3:mini
 ```
 
-### ⚙️ C. System Dependencies
-The underlying audio libraries require system packages to be installed.
+### ⚙️ D. Dependencias del Sistema
+Las librerías de audio requieren paquetes del sistema instalados.
 
-**On Debian/Ubuntu Linux:**
+**En OrangePi (Debian/Ubuntu/Armbian):**
 ```bash
-sudo apt-get update && sudo apt-get install -y portaudio19-dev ffmpeg
-```
-**On Fedora/RHEL Linux:**
-```bash
-# Enable RPM Fusion if you haven't already (see https://rpmfusion.org/Configuration)
-sudo dnf install -y portaudio-devel gcc python3-devel ffmpeg pulseaudio-libs-devel
+sudo apt-get update && sudo apt-get install -y portaudio19-dev ffmpeg python3-dev python3-venv build-essential curl
 ```
 
-### 🗣️ D. Wake-Word and TTS Models
-This project comes with pre-packaged wake-word (`hey_jarvis`) and TTS models in the `models/` directory. No download is required unless you wish to use different ones.
+### 🗣️ E. Modelos de Wake-Word y TTS
+Este proyecto incluye modelos de wake-word empaquetados en el directorio `models/`. **El modelo de voz TTS en español debe descargarse por separado:**
 
-## 🔧 2. Installation
-Clone this repository to your local machine and navigate into the project directory.
 ```bash
-git clone https://github.com/BranchingBad/ollama-STT-TTS.git
-cd ollama-STT-TTS
+# Descargar el modelo de voz en español para Piper TTS
+chmod +x download_spanish_model.sh
+./download_spanish_model.sh
 ```
 
-Create and activate a Python virtual environment (recommended).
+Este script descarga el modelo `es_ES-davefx-medium` de Piper TTS desde Hugging Face.
+
+## 🔧 2. Instalación
+Clona este repositorio en tu OrangePi y navega al directorio del proyecto.
 ```bash
-# Create the environment
+git clone https://github.com/pointedsec/JarvisLocal.git
+cd JarvisLocal
+```
+
+Crea y activa un entorno virtual de Python (recomendado).
+```bash
+# Crear el entorno
 python3 -m venv venv
 
-# Activate it (Linux/macOS)
+# Activarlo
 source venv/bin/activate
-
-# Activate it (Windows)
-# venv\Scripts\activate
 ```
 
-Install the project. For regular use:
+Instala el proyecto:
 ```bash
 pip install .
 ```
 
-For development (including testing dependencies):
+Para desarrollo (incluye dependencias de testing):
 ```bash
 pip install -e .[test]
 ```
-On the first run, the application will automatically download the required `faster-whisper` model.
 
-## ⌨️ 3. Running the Assistant
-You can run the assistant either locally with Python or via Docker. **All commands should be run from the root of the project directory.**
+En la primera ejecución, la aplicación descargará automáticamente el modelo `faster-whisper` necesario.
 
-### 🐍 A. Run Locally with Python
-Make sure your Ollama application is running. Then, start the assistant:
+## ⌨️ 3. Ejecutar el Asistente
+Puedes ejecutar el asistente localmente con Python o vía Docker. **Todos los comandos deben ejecutarse desde la raíz del directorio del proyecto.**
+
+### 🐍 A. Ejecutar Localmente con Python
+Asegúrate de que tu aplicación Ollama esté ejecutándose. Luego, inicia el asistente:
 ```bash
 python run.py
 ```
-Or, if you have installed the package, you can use the entry point:
+O, si has instalado el paquete, puedes usar el punto de entrada:
 ```bash
 ollama-voice-assistant
 ```
 
-When ready, you will see the message: `Ready! Listening for 'hey jarvis'...
-`
+Cuando esté listo, verás el mensaje: `Ready! Listening for 'hey jarvis'...`
 
-**How to Interact:**
-1.  **Say the wakeword** (e.g., "Hey jarvis").
-2.  The assistant will respond, "Yes?" and begin listening.
-3.  **Speak your command** (e.g., "Who won the war of 1812?").
-4.  The assistant will transcribe your audio, send it to Ollama, and speak the response. It will then return to listening for the wakeword.
+**Cómo Interactuar:**
+1.  **Di la palabra clave** (ej. "Hey jarvis").
+2.  El asistente responderá "¿Sí?" y comenzará a escuchar.
+3.  **Habla tu comando en español** (ej. "¿Quién ganó la guerra de 1812?").
+4.  El asistente transcribirá tu audio, lo enviará a Ollama, y hablará la respuesta en español. Luego volverá a escuchar la palabra clave.
 
-**Special Commands:**
-- `"goodbye"` or `"exit"`: Stops the script.
-- `"new chat"` or `"reset chat"`: Clears the conversation history for the LLM.
+**Comandos Especiales:**
+- `"salir"`, `"adiós"`, `"goodbye"` o `"exit"`: Detiene el asistente.
+- `"nuevo chat"`, `"reiniciar chat"`, `"borrar historial"`: Limpia el historial de conversación del LLM.
 
-### 🐋 B. Run with Docker
-A pre-built Docker image is available on the GitHub Container Registry.
-
-**1. Pull the Image:**
+### 🐋 B. Ejecutar con Docker
+**1. Construir la Imagen (en OrangePi ARM64):**
 ```bash
-docker pull ghcr.io/branchingbad/ollama-stt-tts:latest
+docker build -t jarvis-local .
 ```
 
-**2. Prepare Configuration:**
-You will likely need to find the correct audio device index for the container to use. You can list the devices from your local (non-Docker) installation:
+**2. Preparar Configuración:**
+Puedes listar los dispositivos de audio disponibles:
 ```bash
 python run.py --list-devices
 ```
-Copy the `config.ini` file from the repository to a local directory and edit the `device_index` with the correct value from the command above.
+Edita `config.ini` con el `device_index` correcto.
 
-**3. Run the Container (Linux):**
-This command connects the container to your host's network (to access Ollama), mounts your sound devices, and mounts your local `config.ini`.
+**3. Ejecutar el Contenedor (Linux/OrangePi):**
 ```bash
 docker run --rm -it \
   --network=host \
   --device /dev/snd \
   -v ./config.ini:/app/config.ini:ro \
-  ghcr.io/branchingbad/ollama-stt-tts:latest
+  jarvis-local
 ```
-- `--network=host`: Required for the container to access Ollama at `http://localhost:11434`.
-- `--device /dev/snd`: Grants the container access to your host's sound devices (Linux-specific).
-- `-v ./config.ini...`: Mounts your local configuration file as read-only.
+- `--network=host`: Necesario para que el contenedor acceda a Ollama en `http://localhost:11434`.
+- `--device /dev/snd`: Da acceso al contenedor a los dispositivos de sonido del host.
+- `-v ./config.ini...`: Monta tu archivo de configuración local como solo lectura.
 
-**Note for macOS/Windows users:** Audio device mapping is more complex. You may need to adjust the `docker run` command. If `--network=host` is unavailable, remove it and set `ollama_host` in your `config.ini` to `http://host.docker.internal:11434`.
+## 🎛️ 4. Configuración
+Personaliza el asistente editando `config.ini` o proporcionando argumentos de línea de comandos. Los argumentos siempre sobrescriben la configuración del archivo.
 
-## 🎛️ 4. Configuration
-Customize the assistant by editing `config.ini` or by providing command-line arguments. Arguments always override settings from the config file.
-
-**Example Commands:**
+**Comandos de Ejemplo:**
 ```bash
-# Run with a different wakeword threshold and VAD aggressiveness
+# Ejecutar con diferente umbral de wakeword y agresividad VAD
 python run.py --wakeword-threshold 0.5 --vad-aggressiveness 1
 
-# Run using a different Ollama model and input device
-python run.py --ollama-model mistral --device-index 2
+# Ejecutar usando un modelo Ollama diferente
+python run.py --ollama-model mistral
+
+# Cambiar el idioma de Whisper (por defecto: es)
+python run.py --whisper-language es
 ```
 
-**Common Arguments:**
-- `--list-devices`: List available audio input devices and exit.
-- `--list-output-devices`: List available audio output devices and exit.
-- `--debug`: Enable verbose debug logging.
-- `--ollama-model`: Name of the Ollama model to use (e.g., `llama3`, `mistral`).
-- `--whisper-model`: Name of the `faster-whisper` model to use (e.g., `tiny.en`, `base.en`).
-- `--wakeword`: The wakeword phrase to listen for.
-- `--device-index`: The integer index of your microphone.
-- `--piper-output-device-index`: The integer index of your speaker.
-- `--system-prompt`: A custom system prompt or a path to a `.txt` file containing one.
+**Argumentos Comunes:**
+- `--list-devices`: Lista dispositivos de entrada de audio y sale.
+- `--list-output-devices`: Lista dispositivos de salida de audio y sale.
+- `--debug`: Habilita logging detallado de debug.
+- `--ollama-model`: Nombre del modelo Ollama a usar (ej. `llama3`, `mistral`).
+- `--whisper-model`: Nombre del modelo `faster-whisper` (ej. `tiny`, `base`, `small`).
+- `--whisper-language`: Código de idioma para Whisper (ej. `es`, `en`). Por defecto: `es`.
+- `--wakeword`: La frase de activación a escuchar.
+- `--device-index`: El índice entero de tu micrófono.
+- `--piper-output-device-index`: El índice entero de tu altavoz.
+- `--system-prompt`: Un prompt de sistema personalizado o ruta a un archivo `.txt`.
 
-For a full list of configurable options, see the `[Models]` and `[Functionality]` sections in the `config.ini` file.
+Para la lista completa de opciones configurables, ve las secciones `[Models]` y `[Functionality]` en `config.ini`.
+
+### 🍊 Optimizaciones para OrangePi
+
+La configuración por defecto ya está optimizada para OrangePi con 8GB de RAM:
+
+| Ajuste | Valor | Razón |
+|--------|-------|-------|
+| `whisper_model` | `base` | Balance entre precisión y velocidad en CPU ARM |
+| `whisper_device` | `cpu` | OrangePi no tiene GPU CUDA |
+| `whisper_compute_type` | `int8` | Cuantización para menor uso de memoria y mayor velocidad |
+| `whisper_language` | `es` | Transcripción en español |
+| `max_history_tokens` | `1024` | Reduce uso de memoria del historial de chat |
+| `gc_interval` | `5` | Recolección de basura más frecuente para liberar memoria |
+| `ollama_model` | `llama3` | Funciona bien con cuantización en 8GB de RAM |
+
+Si experimentas lentitud, considera usar un modelo de Ollama más pequeño:
+```bash
+ollama pull phi3:mini
+# Y en config.ini: ollama_model = phi3:mini
+```
 
 ## 🧪 5. Testing
-This project includes a suite of unit tests to ensure the reliability of its core components. The tests cover:
--   Ollama connection
--   Configuration management
--   Audio utilities
--   LLM handling
--   Audio transcription
--   Speech synthesis
+Este proyecto incluye una suite de tests unitarios para asegurar la fiabilidad de sus componentes principales.
 
-### Running the Tests
-To run the tests, first ensure you have installed the development dependencies:
+### Ejecutar los Tests
 ```bash
 pip install -e .[test]
-```
-Then, run `pytest` from the root of the project directory:
-```bash
 python3 -m pytest
 ```

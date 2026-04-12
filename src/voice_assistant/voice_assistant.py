@@ -148,7 +148,7 @@ class VoiceAssistant:
             self.audio.clear_buffer()
             
             logging.debug("Playing acknowledgment")
-            self.tts.speak("Yes?")
+            self.tts.speak("¿Sí?")
             self.tts.queue.join()
             
             self.interrupt_event.clear()
@@ -235,19 +235,19 @@ class VoiceAssistant:
 
             logging.info(f"You: {user_text}")
 
-            # Check for exit commands
+            # Check for exit commands (English and Spanish)
             user_text_lower = user_text.lower()
-            if "exit" in user_text_lower or "goodbye" in user_text_lower:
+            if any(cmd in user_text_lower for cmd in ["exit", "goodbye", "salir", "adiós", "adios"]):
                 logging.debug("Exit command detected")
-                self.tts.speak("Goodbye.")
+                self.tts.speak("Adiós.")
                 self.tts.queue.join()
                 exit(0)
     
-            # Check for history reset commands
-            if "new chat" in user_text_lower or "reset chat" in user_text_lower:
+            # Check for history reset commands (English and Spanish)
+            if any(cmd in user_text_lower for cmd in ["new chat", "reset chat", "nuevo chat", "reiniciar chat", "borrar historial"]):
                 logging.debug("Chat reset command detected")
                 self.llm.reset_history()
-                self.tts.speak("Chat history cleared.")
+                self.tts.speak("Historial borrado.")
                 self.tts.queue.join()
                 self.audio.start()
                 return
