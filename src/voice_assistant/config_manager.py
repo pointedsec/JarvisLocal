@@ -185,7 +185,8 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
     model_group.add_argument('--ollama-host', type=str, help="URL of the Ollama server.")
 
     func_group = parser.add_argument_group('Functionality')
-    func_group.add_argument('--wakeword', type=str, help="The wakeword phrase.")
+    func_group.add_argument('--wakeword', type=str, help="The wakeword phrase (deprecated, use --wakewords).")
+    func_group.add_argument('--wakewords', type=str, help="Comma-separated list of wakeword phrases.")
     func_group.add_argument('--wakeword-threshold', type=float, help="Wakeword detection threshold (0.0 to 1.0).")
     func_group.add_argument('--vad-aggressiveness', type=int, help="VAD aggressiveness (0-3).")
     func_group.add_argument('--silence-seconds', type=float, help="Seconds of silence to detect end of speech.")
@@ -218,6 +219,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
         piper_model_path=get_config_val(config_models, 'piper_model_path', DEFAULT_SETTINGS['piper_model_path'], str),
         ollama_host=get_config_val(config_models, 'ollama_host', DEFAULT_SETTINGS['ollama_host'], str),
         wakeword=get_config_val(config_func, 'wakeword', DEFAULT_SETTINGS['wakeword'], str),
+        wakewords=get_config_val(config_func, 'wakewords', DEFAULT_SETTINGS['wakewords'], str),
         wakeword_threshold=get_config_val(config_func, 'wakeword_threshold', DEFAULT_SETTINGS['wakeword_threshold'], float),
         vad_aggressiveness=get_config_val(config_func, 'vad_aggressiveness', DEFAULT_SETTINGS['vad_aggressiveness'], int),
         silence_seconds=get_config_val(config_func, 'silence_seconds', DEFAULT_SETTINGS['silence_seconds'], float),
@@ -243,6 +245,19 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
 
     args = parser.parse_args()
     should_exit_flag = False
+
+    # Parse wakewords: split comma-separated string into a list
+    # If --wakewords is set, use it; otherwise fall back to --wakeword (single)
+    if args.wakewords:
+        args.wakewords_list = [w.strip() for w in args.wakewords.split(',') if w.strip()]
+    elif args.wakeword:
+        args.wakewords_list = [args.wakeword.strip()]
+    else:
+        args.wakewords_list = [DEFAULT_SETTINGS['wakeword']]
+
+    # Keep backward-compatible wakeword as the first one
+    if args.wakewords_list:
+        args.wakeword = args.wakewords_list[0]
 
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)

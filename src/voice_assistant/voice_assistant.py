@@ -45,7 +45,8 @@ class VoiceAssistant:
         logging.debug(f"Wakeword model loaded with key: {self.wakeword_key}")
 
     def run(self):
-        logging.info(f"Ready! Listening for '{self.args.wakeword}'...")
+        wakewords_display = "', '".join(self.args.wakewords_list)
+        logging.info(f"Ready! Listening for '{wakewords_display}'...")
         self.audio.start()
         
         # Track wake word scores for debugging
@@ -111,7 +112,8 @@ class VoiceAssistant:
                             
                             # Clear score history after conversation
                             score_history.clear()
-                            logging.info(f"Ready! Listening for '{self.args.wakeword}'...")
+                            wakewords_display = "', '".join(self.args.wakewords_list)
+                            logging.info(f"Ready! Listening for '{wakewords_display}'...")
                     else:
                         time_since_last = current_time - self.last_wakeword_time
                         logging.debug(f"Wakeword in cooldown period (score: {score:.2f}, time since last: {time_since_last:.2f}s)")
@@ -353,22 +355,33 @@ class VoiceAssistant:
         return ""
 
     def _trim_wakeword(self, text: str) -> str:
-        """Trims the wake word from the transcription using regex for robustness."""
-        wakeword = self.args.wakeword.lower()
+        """Trims any configured wake word from the transcription using regex for robustness."""
         text_lower = text.lower().strip()
 
-        # Generate a list of core wake word names (e.g., "jarvis" from "hey jarvis")
-        # and common misspellings/pronunciations that should be trimmed.
-        # This list should NOT contain partial words that could lead to over-trimming.
+        # Build patterns from ALL configured wakewords
+        patterns_to_match = []
+
+        for wakeword in self.args.wakewords_list:
+            wakeword_lower = wakeword.lower().strip()
+            # Add the exact configured wake word
+            patterns_to_match.append(re.escape(wakeword_lower))
+
+            # Extract individual words to create flexible patterns
+            words = wakeword_lower.split()
+            if len(words) > 1:
+                # Add pattern with optional prefix (e.g., "hey" from "hey jarvis")
+                # Treat first word as optional prefix
+                core_name = words[-1]
+                prefix = r"\s*".join(re.escape(w) for w in words[:-1])
+                patterns_to_match.append(r"(?:" + prefix + r"\s*)?" + re.escape(core_name))
+            else:
+                patterns_to_match.append(re.escape(wakeword_lower))
+
+        # Generate common misspellings/pronunciations for known wakeword names
         core_wakeword_names = ["jarvis", "jarlis", "jarvas", "jarves", "jarvys", "jarvois"]
-        
-        # Add the exact configured wake word to the patterns, in case it's a multi-word phrase
-        patterns_to_match = [re.escape(wakeword)] # Escape for regex safety
-        
-        # Add patterns for common prefixes/suffixes around the core names
         for name in core_wakeword_names:
-            patterns_to_match.append(r"(?:hey\s*)?" + re.escape(name)) # Optional "hey "
-            patterns_to_match.append(re.escape(name)) # Just the name
+            patterns_to_match.append(r"(?:hey\s*)?" + re.escape(name))
+            patterns_to_match.append(re.escape(name))
 
         # Create a single regex pattern to match any of these at the start or end,
         # with optional punctuation and spaces. Use word boundaries where appropriate.
