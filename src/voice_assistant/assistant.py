@@ -21,7 +21,7 @@ warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API
 # --- IMPROVEMENT: Top-Level Dependency Check ---
 # Encapsulate critical imports to provide clear error messages if dependencies are missing.
 try:
-    from .config_manager import load_config_and_args, get_ollama_client
+    from .config_manager import load_config_and_args, get_ollama_client, get_groq_client, check_internet_connectivity
     from .voice_assistant import VoiceAssistant
 except ImportError as e:
     print(
@@ -56,6 +56,7 @@ def main() -> None:
     args, _, should_exit = load_config_and_args()
 
     # --- Log key settings ---
+    logging.info(f"Using LLM backend: {args.llm_backend}")
     logging.info(f"Using Ollama model: {args.ollama_model}")
     logging.info(f"Using Whisper model: {args.whisper_model} on {args.whisper_device}")
     logging.info(f"Trim wake word from transcription: {'Enabled' if args.trim_wake_word else 'Disabled'}")
@@ -72,15 +73,44 @@ def main() -> None:
             # config_manager has already printed the device list.
             sys.exit(0)
 
-        # Get the Ollama client *once* and pass it to the assistant.
-        ollama_client = get_ollama_client(args.ollama_host)
+        # Determine which LLM backend to use and create the appropriate client.
+        llm_client = None
+        effective_backend = args.llm_backend
 
-        if ollama_client is None:
-            logging.warning(
-                "Ollama server not reachable. Assistant will run but cannot respond."
-            )
+        if args.llm_backend == 'groq':
+            llm_client = get_groq_client(args.groq_api_key)
+            if llm_client is None:
+                logging.warning("Groq client could not be created. Assistant will run but cannot respond.")
 
-        assistant = VoiceAssistant(args, ollama_client)
+        elif args.llm_backend == 'ollama':
+            llm_client = get_ollama_client(args.ollama_host)
+            if llm_client is None:
+                logging.warning("Ollama server not reachable. Assistant will run but cannot respond.")
+
+        else:  # 'auto'
+            logging.info("Backend set to 'auto': checking internet connectivity...")
+            if check_internet_connectivity():
+                logging.info("Internet reachable — attempting to use Groq.")
+                llm_client = get_groq_client(args.groq_api_key)
+                if llm_client is not None:
+                    effective_backend = 'groq'
+                    logging.info(f"Using Groq backend with model: {args.groq_model}")
+                else:
+                    logging.warning("Groq client could not be created (check API key). Falling back to Ollama.")
+                    effective_backend = 'ollama'
+            else:
+                logging.info("No internet connection detected — using Ollama as fallback.")
+                effective_backend = 'ollama'
+
+            if effective_backend == 'ollama':
+                llm_client = get_ollama_client(args.ollama_host)
+                if llm_client is None:
+                    logging.warning("Ollama server not reachable. Assistant will run but cannot respond.")
+
+        # Store the resolved backend so VoiceAssistant/LLMHandler can use it.
+        args.effective_llm_backend = effective_backend
+
+        assistant = VoiceAssistant(args, llm_client)
 
         assistant.run()
 

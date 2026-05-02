@@ -12,6 +12,7 @@ from .audio_input import AudioInput
 from .transcriber import Transcriber
 from .synthesizer import Synthesizer
 from .llm_handler import LLMHandler
+from .groq_handler import GroqHandler
 from .audio_utils import SENTENCE_END_PUNCTUATION, monitor_memory
 
 class VoiceAssistant:
@@ -33,7 +34,15 @@ class VoiceAssistant:
         self.audio = AudioInput(args)
         self.transcriber = Transcriber(args)
         self.tts = Synthesizer(args, self.interrupt_event)
-        self.llm = LLMHandler(client, args)
+
+        # Select LLM handler based on the resolved backend
+        backend = getattr(args, 'effective_llm_backend', 'ollama')
+        if backend == 'groq':
+            self.llm = GroqHandler(client, args)
+            logging.info(f"LLM handler: Groq (model: {args.groq_model})")
+        else:
+            self.llm = LLMHandler(client, args)
+            logging.info(f"LLM handler: Ollama (model: {args.ollama_model})")
 
         # Wakeword Setup
         if not os.path.exists(args.wakeword_model_path):

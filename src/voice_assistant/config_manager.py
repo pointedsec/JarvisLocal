@@ -16,6 +16,7 @@ import argparse
 import logging
 import sys
 import os
+import socket
 import ollama
 from typing import Any, Tuple, Optional
 
@@ -102,6 +103,46 @@ def get_ollama_client(ollama_host: str) -> Optional[ollama.Client]:
         logging.warning("Please ensure Ollama is running and the 'ollama_host' in config.ini is correct.")
         return None
 
+
+def check_internet_connectivity(host: str = "api.groq.com", port: int = 443, timeout: float = 3.0) -> bool:
+    """
+    Checks whether the internet is reachable by attempting a TCP connection.
+
+    Returns:
+        True if the host is reachable, False otherwise.
+    """
+    try:
+        socket.setdefaulttimeout(timeout)
+        with socket.create_connection((host, port)):
+            return True
+    except OSError:
+        return False
+
+
+def get_groq_client(api_key: str):
+    """
+    Creates and returns a Groq client.
+
+    Returns None if the groq package is not installed or the API key is missing.
+    """
+    try:
+        from groq import Groq
+    except ImportError:
+        logging.error("The 'groq' package is not installed. Install it with: pip install groq")
+        return None
+
+    if not api_key:
+        logging.error("Groq API key is missing. Set 'groq_api_key' in config.ini or use --groq-api-key.")
+        return None
+
+    logging.info("Creating Groq client...")
+    try:
+        client = Groq(api_key=api_key)
+        return client
+    except Exception as e:
+        logging.error(f"Failed to create Groq client: {e}")
+        return None
+
 # Define a custom type converter for device indices that handles 'none'
 def device_index_type(value: str) -> Optional[int]:
     """Converts a string argument to an int index or None."""
@@ -132,6 +173,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
     config_models = config['Models'] if 'Models' in config else {}
     config_func = config['Functionality'] if 'Functionality' in config else {}
     config_perf = config['Performance'] if 'Performance' in config else {}
+    config_groq = config['Groq'] if 'Groq' in config else {}
 
     def get_config_val(section: configparser.SectionProxy, key: str, default: Any, type_converter: type) -> Any:
         if not config_loaded:
@@ -211,6 +253,16 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
     perf_group.add_argument('--gc-interval', type=int, help="Force garbage collection every N conversations.")
     perf_group.add_argument('--memory-profiling', action='store_true', help="Enable memory profiling in debug mode.")
 
+    groq_group = parser.add_argument_group('Groq')
+    groq_group.add_argument(
+        '--llm-backend',
+        type=str,
+        choices=['ollama', 'groq', 'auto'],
+        help="LLM backend to use: 'ollama' (local), 'groq' (cloud), or 'auto' (Groq when online, Ollama as fallback).",
+    )
+    groq_group.add_argument('--groq-api-key', type=str, help="Groq API key.")
+    groq_group.add_argument('--groq-model', type=str, help="Groq model name (e.g., 'llama-3.3-70b-versatile').")
+
 
     parser.set_defaults(
         ollama_model=get_config_val(config_models, 'ollama_model', DEFAULT_SETTINGS['ollama_model'], str),
@@ -240,7 +292,10 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
         audio_buffer_size=get_config_val(config_func, 'audio_buffer_size', DEFAULT_SETTINGS['audio_buffer_size'], int),
         trim_wake_word=get_config_val(config_func, 'trim_wake_word', DEFAULT_SETTINGS['trim_wake_word'], bool),
         gc_interval=get_config_val(config_perf, 'gc_interval', DEFAULT_SETTINGS['gc_interval'], int),
-        memory_profiling=get_config_val(config_perf, 'memory_profiling', DEFAULT_SETTINGS['memory_profiling'], bool)
+        memory_profiling=get_config_val(config_perf, 'memory_profiling', DEFAULT_SETTINGS['memory_profiling'], bool),
+        llm_backend=get_config_val(config_groq, 'llm_backend', DEFAULT_SETTINGS['llm_backend'], str),
+        groq_api_key=get_config_val(config_groq, 'groq_api_key', DEFAULT_SETTINGS['groq_api_key'], str),
+        groq_model=get_config_val(config_groq, 'groq_model', DEFAULT_SETTINGS['groq_model'], str),
     )
 
     args = parser.parse_args()
