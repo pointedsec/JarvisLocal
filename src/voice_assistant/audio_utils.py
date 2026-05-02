@@ -46,6 +46,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'trim_wake_word': True,
     'max_phrase_duration': 20.0,
     'gain': 1.0,
+    # LLM backend selection: 'ollama', 'groq', or 'auto'
+    # 'auto' uses Groq when internet is available, falls back to Ollama otherwise
+    'llm_backend': 'auto',
+    'groq_api_key': '',
+    'groq_model': 'llama-3.3-70b-versatile',
 }       
 
 # --- 3. Audio Helpers (Updated for sounddevice) ---
