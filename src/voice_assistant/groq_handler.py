@@ -9,12 +9,6 @@ from .web_search import (
     MANOLO_LAMA_STYLE,
 )
 
-try:
-    from groq import Groq
-    GROQ_AVAILABLE = True
-except ImportError:
-    GROQ_AVAILABLE = False
-
 
 class GroqHandler:
     """LLM handler that uses the Groq API for fast cloud inference."""
