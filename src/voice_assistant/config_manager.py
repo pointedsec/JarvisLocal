@@ -176,14 +176,6 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
     config_perf = config['Performance'] if 'Performance' in config else {}
     config_groq = config['Groq'] if 'Groq' in config else {}
 
-    _SENSITIVE_KEY_SUBSTRINGS = ('key', 'password', 'secret', 'token')
-
-    def _mask_if_sensitive(key: str, value: Any) -> Any:
-        """Returns '***' for values whose key name suggests sensitive data."""
-        if any(s in key.lower() for s in _SENSITIVE_KEY_SUBSTRINGS):
-            return '***'
-        return value
-
     def get_config_val(section: configparser.SectionProxy, key: str, default: Any, type_converter: type) -> Any:
         if not config_loaded:
              return default
@@ -193,7 +185,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
             try:
                 return section.getboolean(key, fallback=default)
             except ValueError: # Handle cases where boolean value is malformed
-                logging.warning(f"Invalid boolean value for '{key}' in config.ini. Using default: {_mask_if_sensitive(key, default)}")
+                logging.warning(f"Invalid boolean value for '{key}' in config.ini. Using built-in default.")
                 return default
         
         raw_val = section.get(key) # Get raw value first
@@ -219,7 +211,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
             return type_converter(processed_val)
         except (ValueError, TypeError):
             # Log specific warning for non-boolean type conversion issues
-            logging.warning(f"Invalid value for '{key}' in config.ini. Using default: {_mask_if_sensitive(key, default)}")
+            logging.warning(f"Invalid value for '{key}' in config.ini. Using built-in default.")
             return default
 
     parser = argparse.ArgumentParser(description="A hands-free voice assistant for Ollama.")

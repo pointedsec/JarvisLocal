@@ -77,7 +77,12 @@ class GroqHandler:
             yield None
 
     def _prune_history(self):
-        """More aggressive history management."""
+        """
+        Prunes the conversation history to keep memory usage bounded.
+        Retains the system prompt (index 0) plus the most recent
+        MAX_HISTORY_MESSAGES user/assistant pairs and forces garbage
+        collection after any prune.
+        """
         max_pairs = MAX_HISTORY_MESSAGES
 
         if len(self.messages) > (max_pairs * 2 + 1):
