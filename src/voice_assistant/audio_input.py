@@ -6,9 +6,8 @@ import time
 import numpy as np
 import sounddevice as sd
 import webrtcvad
-from .audio_utils import (
-    FORMAT_NP, CHANNELS, RATE, CHUNK_SIZE, INT16_MAX
-)
+from .audio_utils import FORMAT_NP, CHANNELS, RATE, CHUNK_SIZE, INT16_MAX
+
 
 class AudioInput:
     def __init__(self, args):
@@ -16,17 +15,18 @@ class AudioInput:
         self.vad = webrtcvad.Vad(args.vad_aggressiveness)
         self.stream_buffer = queue.Queue(maxsize=args.audio_buffer_size)
         self.stream = None
-        
+
         # Derived settings
         self.silence_chunks = int(args.silence_seconds * 1000 / 30)
         self.pre_buffer_chunks = int(args.pre_buffer_ms / 30)
-        
+
         # IMPROVEMENT: Track speech confidence for better detection
         self.speech_confidence_history = []
         self.speech_confidence_window = 10  # Track last 10 chunks
 
     def start(self):
-        if self.stream: return
+        if self.stream:
+            return
         try:
             self.stream = sd.InputStream(
                 samplerate=RATE,
@@ -34,7 +34,7 @@ class AudioInput:
                 device=self.args.device_index,
                 channels=CHANNELS,
                 dtype=FORMAT_NP,
-                callback=self._callback
+                callback=self._callback,
             )
             self.stream.start()
             logging.debug("Audio stream started.")
@@ -49,20 +49,21 @@ class AudioInput:
             self.stream = None
 
     def _callback(self, indata, frames, time, status):
-        if status: logging.warning(f"Audio status: {status}")
+        if status:
+            logging.warning(f"Audio status: {status}")
         try:
             # Apply gain
             if self.args.gain != 1.0:
                 # Ensure gain is not negative
-                gain = max(0.0, self.args.gain) # Ensure gain is non-negative
-                
+                gain = max(0.0, self.args.gain)  # Ensure gain is non-negative
+
                 # Convert to float32, apply gain, then clamp to int16 range before converting back
                 indata_float = indata.astype(np.float32) * gain
                 indata = np.clip(indata_float, -INT16_MAX, INT16_MAX).astype(np.int16)
 
             self.stream_buffer.put_nowait(indata.tobytes())
         except queue.Full:
-            pass # Buffer full, drop chunk
+            pass  # Buffer full, drop chunk
 
     def get_chunk(self, timeout=0.01):
         try:
@@ -87,52 +88,56 @@ class AudioInput:
         start_time = time.time()
         speech_start_time = None
         max_phrase_seconds = self.args.max_phrase_duration
-        
+
         # IMPROVEMENT: Track speech energy for better silence detection
         speech_energy_history = []
         energy_window = 5
-        
+
         # IMPROVEMENT: Minimum speech duration before allowing stop (prevent cutting off too early)
         min_speech_duration = 0.3  # seconds
-        
+
         self.clear_buffer()
 
         while True:
-            if interrupt_event.is_set(): 
+            if interrupt_event.is_set():
                 logging.debug("Recording interrupted by event")
                 return None
-            
+
             if not is_speaking and (time.time() - start_time > timeout_seconds):
                 logging.debug(f"No speech detected within {timeout_seconds}s timeout")
                 return None
 
             data = self.get_chunk(timeout=0.1)
-            if not data: 
+            if not data:
                 continue
 
             # Calculate audio energy for this chunk
-            audio_chunk = np.frombuffer(data, dtype=np.int16).astype(np.float32) / INT16_MAX
+            audio_chunk = (
+                np.frombuffer(data, dtype=np.int16).astype(np.float32) / INT16_MAX
+            )
             chunk_energy = np.sqrt(np.mean(audio_chunk**2))
-            
+
             is_speech = self.vad.is_speech(data, RATE)
 
             if is_speaking:
                 # Check for max phrase duration timeout
                 elapsed = time.time() - speech_start_time
                 if elapsed > max_phrase_seconds:
-                    logging.debug(f"Max phrase duration of {max_phrase_seconds}s exceeded. Forcing stop.")
+                    logging.debug(
+                        f"Max phrase duration of {max_phrase_seconds}s exceeded. Forcing stop."
+                    )
                     break
 
                 frames.append(data)
-                
+
                 # IMPROVEMENT: Track energy history
                 speech_energy_history.append(chunk_energy)
                 if len(speech_energy_history) > energy_window:
                     speech_energy_history.pop(0)
-                
+
                 if not is_speech:
                     silent_chunks += 1
-                    
+
                     # IMPROVEMENT: Use energy trend to decide when to stop
                     # Only stop if we've been speaking long enough AND energy is consistently low
                     if silent_chunks > self.silence_chunks:
@@ -140,32 +145,47 @@ class AudioInput:
                         if elapsed >= min_speech_duration:
                             # Check recent energy trend
                             if len(speech_energy_history) >= energy_window:
-                                avg_recent_energy = sum(speech_energy_history[-energy_window:]) / energy_window
-                                
+                                avg_recent_energy = (
+                                    sum(speech_energy_history[-energy_window:])
+                                    / energy_window
+                                )
+
                                 # Stop if energy has dropped significantly
-                                if avg_recent_energy < 0.015:  # Very low energy threshold
-                                    logging.debug(f"Silence detected after {elapsed:.2f}s "
-                                                f"(energy: {avg_recent_energy:.4f})")
+                                if (
+                                    avg_recent_energy < 0.015
+                                ):  # Very low energy threshold
+                                    logging.debug(
+                                        f"Silence detected after {elapsed:.2f}s "
+                                        f"(energy: {avg_recent_energy:.4f})"
+                                    )
                                     break
                                 else:
-                                    logging.debug(f"VAD says silence but energy still present "
-                                                f"({avg_recent_energy:.4f}), continuing...")
-                                    silent_chunks = max(0, silent_chunks - 2)  # Reset counter partially
+                                    logging.debug(
+                                        f"VAD says silence but energy still present "
+                                        f"({avg_recent_energy:.4f}), continuing..."
+                                    )
+                                    silent_chunks = max(
+                                        0, silent_chunks - 2
+                                    )  # Reset counter partially
                             else:
                                 break  # Not enough history, trust VAD
                         else:
                             # Too early to stop, keep recording
-                            logging.debug(f"Silence detected but only {elapsed:.2f}s spoken, continuing...")
+                            logging.debug(
+                                f"Silence detected but only {elapsed:.2f}s spoken, continuing..."
+                            )
                             silent_chunks = max(0, silent_chunks - 1)
                 else:
                     # Speech detected, reset silence counter
                     silent_chunks = 0
-                    
+
             elif is_speech:
                 # Speech just started
                 is_speaking = True
                 speech_start_time = time.time()
-                logging.debug(f"Speech started, using {len(pre_buffer)} pre-buffer chunks")
+                logging.debug(
+                    f"Speech started, using {len(pre_buffer)} pre-buffer chunks"
+                )
                 frames.extend(pre_buffer)
                 frames.append(data)
                 speech_energy_history = [chunk_energy]
@@ -178,24 +198,27 @@ class AudioInput:
         if not frames:
             logging.debug("No frames recorded")
             return None
-        
+
         # IMPROVEMENT: Check if we got meaningful audio
         total_duration = len(frames) * 0.03  # Each chunk is 30ms
         logging.debug(f"Recorded {len(frames)} chunks ({total_duration:.2f}s)")
-        
+
         if total_duration < 0.2:  # Less than 200ms
             logging.debug(f"Recording too short ({total_duration:.2f}s), discarding")
             return None
-        
-        
+
         # Convert to float32 for Whisper
-        audio_data = b''.join(frames)
-        audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / INT16_MAX
-        
+        audio_data = b"".join(frames)
+        audio_np = (
+            np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / INT16_MAX
+        )
+
         # Final quality check - allow Whisper to decide if it's speech
         final_rms = np.sqrt(np.mean(audio_np**2))
-        if final_rms < 0.005: # This is very strict.
-            logging.debug(f"Final audio very quiet (RMS: {final_rms:.4f}), passing to transcriber with warning")
+        if final_rms < 0.005:  # This is very strict.
+            logging.debug(
+                f"Final audio very quiet (RMS: {final_rms:.4f}), passing to transcriber with warning"
+            )
             # Don't return None; let Whisper decide
-            
+
         return audio_np

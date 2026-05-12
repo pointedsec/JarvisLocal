@@ -31,12 +31,17 @@ class MusicPlayer:
         self._lock = threading.Lock()
         self._mpv = _find_mpv()
         if not self._mpv:
-            logging.warning("mpv no encontrado en PATH. La reproducción de música no funcionará.")
+            logging.warning(
+                "mpv no encontrado en PATH. La reproducción de música no funcionará."
+            )
         try:
             import yt_dlp  # noqa: F401
+
             self._ytdlp_ok = True
         except ImportError:
-            logging.warning("yt_dlp no instalado. La reproducción de música no funcionará.")
+            logging.warning(
+                "yt_dlp no instalado. La reproducción de música no funcionará."
+            )
             self._ytdlp_ok = False
 
     def available(self) -> bool:

@@ -11,7 +11,9 @@ import sys
 import os
 
 # To import voice_assistant modules
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
+)
 
 from voice_assistant.web_search import (
     is_football_query,
@@ -132,8 +134,16 @@ class TestFormatSearchResults(unittest.TestCase):
     def test_formats_multiple_results(self):
         """Test formatting of multiple search results."""
         results = [
-            {"title": "Result 1", "body": "Description 1", "href": "https://example.com/1"},
-            {"title": "Result 2", "body": "Description 2", "href": "https://example.com/2"},
+            {
+                "title": "Result 1",
+                "body": "Description 1",
+                "href": "https://example.com/1",
+            },
+            {
+                "title": "Result 2",
+                "body": "Description 2",
+                "href": "https://example.com/2",
+            },
         ]
         formatted = format_search_results(results)
         self.assertIn("[Resultados de búsqueda en internet]:", formatted)
@@ -143,7 +153,11 @@ class TestFormatSearchResults(unittest.TestCase):
     def test_formats_single_result(self):
         """Test formatting of a single search result."""
         results = [
-            {"title": "Only Result", "body": "Only Description", "href": "https://example.com"},
+            {
+                "title": "Only Result",
+                "body": "Only Description",
+                "href": "https://example.com",
+            },
         ]
         formatted = format_search_results(results)
         self.assertIn("1. Only Result: Only Description", formatted)
@@ -172,8 +186,8 @@ class TestFormatSearchResults(unittest.TestCase):
 class TestWebSearch(unittest.TestCase):
     """Tests for the web_search function."""
 
-    @patch('voice_assistant.web_search.DDGS_AVAILABLE', True)
-    @patch('voice_assistant.web_search.DDGS')
+    @patch("voice_assistant.web_search.DDGS_AVAILABLE", True)
+    @patch("voice_assistant.web_search.DDGS")
     def test_successful_search(self, mock_ddgs_class):
         """Test a successful web search."""
         mock_results = [
@@ -182,7 +196,9 @@ class TestWebSearch(unittest.TestCase):
         ]
         mock_ddgs_instance = MagicMock()
         mock_ddgs_instance.text.return_value = mock_results
-        mock_ddgs_class.return_value.__enter__ = MagicMock(return_value=mock_ddgs_instance)
+        mock_ddgs_class.return_value.__enter__ = MagicMock(
+            return_value=mock_ddgs_instance
+        )
         mock_ddgs_class.return_value.__exit__ = MagicMock(return_value=False)
 
         results = web_search("test query", max_results=2)
@@ -194,20 +210,22 @@ class TestWebSearch(unittest.TestCase):
             "test query", max_results=2, region="es-es"
         )
 
-    @patch('voice_assistant.web_search.DDGS_AVAILABLE', True)
-    @patch('voice_assistant.web_search.DDGS')
+    @patch("voice_assistant.web_search.DDGS_AVAILABLE", True)
+    @patch("voice_assistant.web_search.DDGS")
     def test_empty_results(self, mock_ddgs_class):
         """Test web search with no results."""
         mock_ddgs_instance = MagicMock()
         mock_ddgs_instance.text.return_value = []
-        mock_ddgs_class.return_value.__enter__ = MagicMock(return_value=mock_ddgs_instance)
+        mock_ddgs_class.return_value.__enter__ = MagicMock(
+            return_value=mock_ddgs_instance
+        )
         mock_ddgs_class.return_value.__exit__ = MagicMock(return_value=False)
 
         results = web_search("nonexistent query xyz")
         self.assertIsNone(results)
 
-    @patch('voice_assistant.web_search.DDGS_AVAILABLE', True)
-    @patch('voice_assistant.web_search.DDGS')
+    @patch("voice_assistant.web_search.DDGS_AVAILABLE", True)
+    @patch("voice_assistant.web_search.DDGS")
     def test_search_exception(self, mock_ddgs_class):
         """Test web search when an exception occurs."""
         mock_ddgs_class.return_value.__enter__ = MagicMock(
@@ -218,7 +236,7 @@ class TestWebSearch(unittest.TestCase):
         results = web_search("test query")
         self.assertIsNone(results)
 
-    @patch('voice_assistant.web_search.DDGS_AVAILABLE', False)
+    @patch("voice_assistant.web_search.DDGS_AVAILABLE", False)
     def test_search_unavailable(self):
         """Test web search when duckduckgo-search is not installed."""
         results = web_search("test query")
@@ -253,15 +271,17 @@ class TestKeywordLists(unittest.TestCase):
     def test_football_keywords_are_lowercase(self):
         """Test that all football keywords are lowercase."""
         for keyword in FOOTBALL_KEYWORDS:
-            self.assertEqual(keyword, keyword.lower(),
-                             f"Keyword '{keyword}' is not lowercase")
+            self.assertEqual(
+                keyword, keyword.lower(), f"Keyword '{keyword}' is not lowercase"
+            )
 
     def test_current_info_keywords_are_lowercase(self):
         """Test that all current info keywords are lowercase."""
         for keyword in CURRENT_INFO_KEYWORDS:
-            self.assertEqual(keyword, keyword.lower(),
-                             f"Keyword '{keyword}' is not lowercase")
+            self.assertEqual(
+                keyword, keyword.lower(), f"Keyword '{keyword}' is not lowercase"
+            )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

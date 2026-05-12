@@ -2,6 +2,7 @@ import os
 import shutil
 import glob
 
+
 def delete_item(path, is_dir=False):
     """Deletes the file or directory."""
     try:
@@ -14,26 +15,27 @@ def delete_item(path, is_dir=False):
     except Exception as e:
         print(f"Error removing {path}: {e}")
 
+
 def main():
     """Main function to find and remove unneeded files and directories."""
     print("Starting project cleanup...")
-    
+
     project_root = os.path.dirname(os.path.abspath(__file__))
-    
+
     to_remove = {
         "dirs": [
-            os.path.join(project_root, 'app'),
-            os.path.join(project_root, '.pytest_cache'),
-            os.path.join(project_root, 'build'),
-            os.path.join(project_root, 'dist'),
+            os.path.join(project_root, "app"),
+            os.path.join(project_root, ".pytest_cache"),
+            os.path.join(project_root, "build"),
+            os.path.join(project_root, "dist"),
         ],
         "files": [
-            os.path.join(project_root, 'requirements.txt'),
+            os.path.join(project_root, "requirements.txt"),
         ],
         "patterns": [
-            os.path.join(project_root, '**', '__pycache__'),
-            os.path.join(project_root, '*.egg-info'),
-        ]
+            os.path.join(project_root, "**", "__pycache__"),
+            os.path.join(project_root, "*.egg-info"),
+        ],
     }
 
     items_to_delete = []
@@ -63,7 +65,7 @@ def main():
 
     try:
         response = input("\nDo you want to remove all these items? (y/n): ").lower()
-        if response == 'y':
+        if response == "y":
             print("\nStarting removal...")
             for path, is_dir in items_to_delete:
                 delete_item(path, is_dir)
@@ -71,8 +73,9 @@ def main():
             print("\nCleanup aborted by user.")
     except (KeyboardInterrupt, EOFError):
         print("\nCleanup aborted by user.")
-    
+
     print("\nCleanup finished.")
+
 
 if __name__ == "__main__":
     main()
