@@ -79,6 +79,25 @@ MUSIC_STOP_PATTERNS = [
     r"^(?:para|pausa|stop|c[aá]llate|silencio|basta)\.?$",
 ]
 
+# --- Voice triggers ----------------------------------------------------------
+# Hard-coded "magic phrases" that bypass the LLM and play a specific song.
+# Add new entries here to extend. Each entry:
+#   name:        log/debug label
+#   patterns:    list of regex (matched case-insensitively against the
+#                lowercased+punctuation-stripped transcript)
+#   music_query: query passed to MusicPlayer.play()
+#   announce:    optional TTS line spoken before playback (None to skip)
+VOICE_TRIGGERS = [
+    {
+        "name": "El Comandante",
+        "patterns": [
+            r"\bel\s+comandante\s+est[aá]\s+aqu[ií]\b",
+        ],
+        "music_query": "Erika marcha alemana",
+        "announce": "A formar, el Comandante ha llegado.",
+    },
+]
+
 class VoiceAssistant:
     def __init__(self, args, client):
         self.args = args
@@ -319,6 +338,41 @@ class VoiceAssistant:
 
         return False
 
+    def _handle_voice_triggers(self, text: str) -> bool:
+        """
+        Detects hard-coded voice triggers (e.g. 'el comandante está aquí')
+        and plays a specific song via the music player. Bypasses the LLM.
+        Returns True if handled.
+        """
+        t = text.lower().strip().rstrip(".?!,¿¡")
+
+        for trigger in VOICE_TRIGGERS:
+            for pat in trigger["patterns"]:
+                if re.search(pat, t, flags=re.IGNORECASE):
+                    name = trigger["name"]
+                    query = trigger["music_query"]
+                    logging.info(f"[VoiceTrigger] '{name}' activado por: '{t}'")
+
+                    if not self.music.available():
+                        self.tts.speak("No tengo el reproductor de música disponible.")
+                        self.tts.queue.join()
+                        return True
+
+                    announce = trigger.get("announce")
+                    if announce:
+                        self.tts.speak(announce)
+                        self.tts.queue.join()
+
+                    title = self.music.play(query)
+                    if title:
+                        logging.info(f"[VoiceTrigger] '{name}' sonando: {title}")
+                    else:
+                        self.tts.speak("No he podido encontrarla.")
+                        self.tts.queue.join()
+                    return True
+
+        return False
+
     def _handle_music_command(self, text: str) -> bool:
         """Detects and executes music commands. Returns True if handled."""
         t = text.lower().strip().rstrip(".?!,¿¡")
@@ -477,6 +531,12 @@ class VoiceAssistant:
                 self.tts.queue.join()
                 exit(0)
     
+            # Check for hard-coded voice triggers (e.g. "el comandante está aquí")
+            # BEFORE timer/music/LLM so the magic phrase always wins.
+            if self._handle_voice_triggers(user_text):
+                self.audio.start()
+                return True
+
             # Check for timer commands BEFORE sending to LLM
             if self._handle_timer_command(user_text):
                 self.audio.start()
