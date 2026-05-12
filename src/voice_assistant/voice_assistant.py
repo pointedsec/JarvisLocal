@@ -40,6 +40,11 @@ TIMER_PATTERNS = [
     r"^(?:en|dentro\s+de)\s+(\d+\s+(?:hora|horas|minuto|minutos|segundo|segundos))\s+av[ií]same",
 ]
 
+TIMER_CANCEL_PATTERNS = [
+    r"^(?:cancela|cancelar|para|parar|det[eé]n|detener|quita|quitar|borra|borrar|elimina|eliminar|anula|anular|olv[ií]date\s+del?)\s+(?:el\s+|los\s+|todos\s+los\s+|mi\s+)?temporizador(?:es)?\b",
+    r"^temporizador(?:es)?\s+(?:cancela(?:do|dos)?|fuera|stop)\b",
+]
+
 def _parse_timer_duration(text: str) -> int | None:
     """Parses a time expression and returns total seconds, or None if unparseable."""
     text = text.lower().strip().rstrip(".?!,¿¡")
@@ -80,6 +85,10 @@ class VoiceAssistant:
         self.interrupt_event = threading.Event()
         self.conversation_count = 0
         self.is_handling_conversation = False
+
+        # Active timers — each entry: {"event": Event, "label": str, "thread": Thread}
+        self.active_timers = []
+        self.timers_lock = threading.Lock()
         
         # Wake word detection improvements
         self.last_wakeword_time = 0
@@ -227,9 +236,34 @@ class VoiceAssistant:
         self.cleanup()
 
     def _handle_timer_command(self, text: str) -> bool:
-        """Detects and sets a voice timer. Returns True if handled."""
+        """Detects and sets/cancels a voice timer. Returns True if handled."""
         t = text.lower().strip().rstrip(".?!,¿¡")
 
+        # --- Cancellation: handle BEFORE creation so "para el temporizador"
+        # doesn't get parsed as a new "para...temporizador" creation. ---
+        for pat in TIMER_CANCEL_PATTERNS:
+            if re.match(pat, t, flags=re.IGNORECASE):
+                with self.timers_lock:
+                    pending = [t for t in self.active_timers if not t["event"].is_set()]
+                    if not pending:
+                        self.tts.speak("No hay ningún temporizador activo. Tranquilidad absoluta.")
+                        self.tts.queue.join()
+                        return True
+                    count = len(pending)
+                    for timer in pending:
+                        timer["event"].set()
+                    self.active_timers.clear()
+
+                if count == 1:
+                    msg = "Temporizador cancelado. Como si nunca hubiera existido."
+                else:
+                    msg = f"Cancelados {count} temporizadores. Vaya lío llevabas."
+                self.tts.speak(msg)
+                self.tts.queue.join()
+                logging.info(f"[Timer] Cancelados {count} temporizadores")
+                return True
+
+        # --- Creation ---
         for pat in TIMER_PATTERNS:
             m = re.match(pat, t, flags=re.IGNORECASE)
             if m:
@@ -252,13 +286,34 @@ class VoiceAssistant:
                 self.tts.queue.join()
                 logging.info(f"[Timer] Iniciado: {seconds}s")
 
-                def _fire(secs, lbl, tts):
-                    time.sleep(secs)
+                cancel_event = threading.Event()
+
+                def _fire(secs, lbl, tts, ev):
+                    # Interruptible sleep: returns True if cancelled.
+                    was_cancelled = ev.wait(timeout=secs)
+                    if was_cancelled:
+                        logging.info(f"[Timer] {lbl} cancelado antes de disparar")
+                        return
                     logging.info(f"[Timer] Disparado tras {secs}s")
                     tts.speak(f"Han pasado {lbl}. Ya puede dejar de ignorarme.")
                     tts.queue.join()
+                    # Self-clean from the active list once fired.
+                    with self.timers_lock:
+                        self.active_timers[:] = [
+                            x for x in self.active_timers if x["event"] is not ev
+                        ]
 
-                t_thread = threading.Thread(target=_fire, args=(seconds, label, self.tts), daemon=True)
+                t_thread = threading.Thread(
+                    target=_fire,
+                    args=(seconds, label, self.tts, cancel_event),
+                    daemon=True,
+                )
+                with self.timers_lock:
+                    self.active_timers.append({
+                        "event": cancel_event,
+                        "label": label,
+                        "thread": t_thread,
+                    })
                 t_thread.start()
                 return True
 
