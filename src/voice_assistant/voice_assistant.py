@@ -81,27 +81,33 @@ MUSIC_STOP_PATTERNS = [
 
 # --- Voice triggers ----------------------------------------------------------
 # Hard-coded "magic phrases" that bypass the LLM and play a specific song.
-# Add new entries here to extend. Each entry:
-#   name:        log/debug label
-#   patterns:    list of regex (matched case-insensitively against the
-#                lowercased+punctuation-stripped transcript)
-#   music_query: query passed to MusicPlayer.play()
-#   announce:    optional TTS line spoken before playback (None to skip)
+# Detection is intentionally substring-based (lowercased, ASCII-folded) so
+# Whisper transcription quirks (missing/extra accents, articles, "ya", etc.)
+# don't break the trigger. Each entry:
+#   name:           log/debug label
+#   required_words: ALL of these must appear (substring) in the transcript
+#   music_query:    query passed to MusicPlayer.play()
+#   announce:       optional TTS line spoken before playback (None to skip)
 VOICE_TRIGGERS = [
     {
         "name": "El Comandante",
-        "patterns": [
-            # Flexible: "comandante" + "aqui" with anything in between
-            # (handles "ya", "ya ha llegado", missing article, word order, etc.)
-            r"\bcomandante\b.{0,30}\baqu[ií]\b",
-            r"\baqu[ií]\b.{0,30}\bcomandante\b",
-            r"\bllega(?:do)?\s+el\s+comandante\b",
-            r"\bha\s+llegado\s+el\s+comandante\b",
-        ],
-        "music_query": "Erika marcha alemana",
+        "required_words": ["comandante", "aqui"],
+        "music_query": "Erika La marcha alemana",
         "announce": "A formar, el Comandante ha llegado.",
     },
 ]
+
+
+def _normalize_for_trigger(text: str) -> str:
+    """Lowercase + strip accents + collapse whitespace, for tolerant matching."""
+    import unicodedata
+    t = text.lower().strip().rstrip(".?!,¿¡")
+    # Strip accents: "está" -> "esta", "aquí" -> "aqui"
+    t = "".join(
+        c for c in unicodedata.normalize("NFD", t)
+        if unicodedata.category(c) != "Mn"
+    )
+    return t
 
 class VoiceAssistant:
     def __init__(self, args, client):
@@ -347,34 +353,45 @@ class VoiceAssistant:
         """
         Detects hard-coded voice triggers (e.g. 'el comandante está aquí')
         and plays a specific song via the music player. Bypasses the LLM.
-        Returns True if handled.
+        Uses substring matching on an accent-folded transcript to tolerate
+        Whisper variants. Returns True if handled.
         """
-        t = text.lower().strip().rstrip(".?!,¿¡")
+        normalized = _normalize_for_trigger(text)
+        logging.info(f"[VoiceTrigger] Evaluando: '{normalized}'")
 
         for trigger in VOICE_TRIGGERS:
-            for pat in trigger["patterns"]:
-                if re.search(pat, t, flags=re.IGNORECASE):
-                    name = trigger["name"]
-                    query = trigger["music_query"]
-                    logging.info(f"[VoiceTrigger] '{name}' activado por: '{t}'")
+            required = trigger["required_words"]
+            if all(word in normalized for word in required):
+                name = trigger["name"]
+                query = trigger["music_query"]
+                logging.info(
+                    f"[VoiceTrigger] '{name}' activado — palabras {required} "
+                    f"encontradas en '{normalized}'"
+                )
 
-                    if not self.music.available():
-                        self.tts.speak("No tengo el reproductor de música disponible.")
-                        self.tts.queue.join()
-                        return True
-
-                    announce = trigger.get("announce")
-                    if announce:
-                        self.tts.speak(announce)
-                        self.tts.queue.join()
-
-                    title = self.music.play(query)
-                    if title:
-                        logging.info(f"[VoiceTrigger] '{name}' sonando: {title}")
-                    else:
-                        self.tts.speak("No he podido encontrarla.")
-                        self.tts.queue.join()
+                if not self.music.available():
+                    self.tts.speak("No tengo el reproductor de música disponible.")
+                    self.tts.queue.join()
                     return True
+
+                # Mirror the normal music command flow exactly:
+                announce = trigger.get("announce")
+                if announce:
+                    self.tts.speak(announce)
+                    self.tts.queue.join()
+                else:
+                    self.tts.speak(f"Buscando {query}.")
+                    self.tts.queue.join()
+
+                logging.info(f"[VoiceTrigger] Llamando music.play('{query}')")
+                title = self.music.play(query)
+                if title:
+                    logging.info(f"[VoiceTrigger] '{name}' sonando: {title}")
+                else:
+                    logging.warning(f"[VoiceTrigger] '{name}' — music.play devolvió None/vacío")
+                    self.tts.speak("No he podido encontrarla.")
+                    self.tts.queue.join()
+                return True
 
         return False
 
