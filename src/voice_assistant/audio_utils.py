@@ -41,10 +41,13 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'whisper_no_speech_prob': 0.8,
     'whisper_initial_prompt': (
         'Conversacion en espanol con Jarvis, asistente de voz personal. '
-        'Vocabulario habitual: temporizador, musica, reproduce, cancela, '
-        'comandante, Erika, marcha alemana, Atletico de Madrid, '
-        'Real Madrid, Barca, Rodrigo, Alberto, Victor, Bragado, Topo, '
-        'El Local.'
+        'Frases frecuentes del usuario: "El comandante ya esta aqui". '
+        '"El comandante esta aqui". "Pon un temporizador de cinco minutos". '
+        '"Cancela el temporizador". "Pon musica de". '
+        'Vocabulario habitual: comandante, comandante, comandante, '
+        'temporizador, musica, reproduce, cancela, Erika, marcha alemana, '
+        'Atletico de Madrid, Real Madrid, Barca, Rodrigo, Alberto, Victor, '
+        'Bragado, Topo, El Local.'
     ),
     'max_history_tokens': 2048,
     'audio_buffer_size': DEFAULT_AUDIO_BUFFER_SIZE,  # FIX #2: Added buffer size config

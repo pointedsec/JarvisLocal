@@ -81,17 +81,27 @@ MUSIC_STOP_PATTERNS = [
 
 # --- Voice triggers ----------------------------------------------------------
 # Hard-coded "magic phrases" that bypass the LLM and play a specific song.
-# Detection is intentionally substring-based (lowercased, ASCII-folded) so
-# Whisper transcription quirks (missing/extra accents, articles, "ya", etc.)
-# don't break the trigger. Each entry:
+# Detection is substring-based on an accent-folded transcript.
+#
+# required_words is a list of GROUPS. Each group is a list of alternative
+# spellings — at least ONE word from EACH group must appear in the
+# transcript for the trigger to fire. This makes the matcher tolerant to
+# Whisper mistranscriptions (e.g. "comendante" instead of "comandante").
+#
+# Each entry:
 #   name:           log/debug label
-#   required_words: ALL of these must appear (substring) in the transcript
+#   required_words: list[list[str]] — every group needs one hit
 #   music_query:    query passed to MusicPlayer.play()
 #   announce:       optional TTS line spoken before playback (None to skip)
 VOICE_TRIGGERS = [
     {
         "name": "El Comandante",
-        "required_words": ["comandante", "aqui"],
+        "required_words": [
+            # Group 1: "comandante" and common Whisper misfires
+            ["comandante", "comendante", "comen dante", "comanda nte", "comandant"],
+            # Group 2: "aqui" variants (already accent-folded)
+            ["aqui", "aki", "aquim"],
+        ],
         "music_query": "Erika La marcha alemana",
         "announce": "A formar, el Comandante ha llegado.",
     },
@@ -361,12 +371,19 @@ class VoiceAssistant:
 
         for trigger in VOICE_TRIGGERS:
             required = trigger["required_words"]
-            if all(word in normalized for word in required):
+            # Each group must contribute at least one hit. Accept both
+            # legacy flat list[str] and new list[list[str]] shapes.
+            groups = [g if isinstance(g, (list, tuple)) else [g] for g in required]
+            matched_per_group = [
+                next((w for w in group if w in normalized), None)
+                for group in groups
+            ]
+            if all(matched_per_group):
                 name = trigger["name"]
                 query = trigger["music_query"]
                 logging.info(
-                    f"[VoiceTrigger] '{name}' activado — palabras {required} "
-                    f"encontradas en '{normalized}'"
+                    f"[VoiceTrigger] '{name}' activado — hits {matched_per_group} "
+                    f"en '{normalized}'"
                 )
 
                 if not self.music.available():
