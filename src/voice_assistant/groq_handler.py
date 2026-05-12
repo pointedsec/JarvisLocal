@@ -17,6 +17,8 @@ class GroqHandler:
         self.client = client
         self.args = args
         self.messages = []
+        self.total_prompt_tokens = 0
+        self.total_completion_tokens = 0
         self.reset_history()
 
     def reset_history(self):
@@ -58,6 +60,7 @@ class GroqHandler:
 
         full_response = ""
         try:
+            prompt_tokens = sum(len(m["content"]) // 4 for m in self.messages)
             stream = self.client.chat.completions.create(
                 model=self.args.groq_model,
                 messages=self.messages,
@@ -67,6 +70,15 @@ class GroqHandler:
                 token = chunk.choices[0].delta.content or ""
                 full_response += token
                 yield token
+
+            completion_tokens = len(full_response) // 4
+            self.total_prompt_tokens += prompt_tokens
+            self.total_completion_tokens += completion_tokens
+            logging.info(
+                f"[Groq tokens] prompt≈{prompt_tokens} completion≈{completion_tokens} "
+                f"total≈{prompt_tokens + completion_tokens} | "
+                f"acumulado≈{self.total_prompt_tokens + self.total_completion_tokens}"
+            )
 
             self.messages.append({'role': 'assistant', 'content': full_response})
 

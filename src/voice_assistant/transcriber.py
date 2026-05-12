@@ -42,30 +42,36 @@ class Transcriber:
     def _internal_transcribe(self, audio_np: npt.NDArray[np.float32]) -> str:
         """Internal transcription with detailed logging."""
         logging.debug(f"Starting Whisper transcription (audio length: {len(audio_np)} samples, {len(audio_np)/16000:.2f}s)")
-        
+
+        # Optional vocabulary hint to bias decoding toward expected words.
+        initial_prompt = getattr(self.args, 'whisper_initial_prompt', '') or None
+
         try:
             segments, info = self.model.transcribe(
-                audio_np, 
+                audio_np,
                 language=self.language,
                 vad_filter=False,  # We've already done VAD
                 condition_on_previous_text=True,
                 log_prob_threshold=None,
-                compression_ratio_threshold=None
+                compression_ratio_threshold=None,
+                initial_prompt=initial_prompt,
             )
-            
+
             logging.debug(f"Transcription info - language: {info.language}, language_probability: {info.language_probability:.2f}")
-            
+
             # Process segments with detailed logging
             transcription = []
+            fallback_segments = []  # keep ALL segment text in case every one is discarded
             segment_count = 0
             discarded_count = 0
-            
+
             for segment in segments:
                 segment_count += 1
-                
+                fallback_segments.append(segment.text)
+
                 # Log each segment for debugging
                 logging.debug(f"""Segment {segment_count}: [{segment.start:.2f}s-{segment.end:.2f}s] avg_logprob={segment.avg_logprob:.3f}, no_speech_prob={segment.no_speech_prob:.3f}, text='{segment.text.strip()}'""")
-                
+
                 # Check confidence thresholds
                 if segment.avg_logprob > self.args.whisper_avg_logprob and \
                    segment.no_speech_prob < self.args.whisper_no_speech_prob:
@@ -80,13 +86,26 @@ class Transcriber:
                         reasons.append(f"high_nospeech({segment.no_speech_prob:.3f}>={self.args.whisper_no_speech_prob})")
                     logging.debug(f"  ✗ Segment discarded: {', '.join(reasons)}")
 
+            # FIX: If thresholds discarded EVERYTHING but Whisper did produce
+            # text, fall back to the raw text rather than kicking the user out
+            # of the conversation. A borderline transcription is better than
+            # silently dropping a real command (e.g. "el comandante ya esta aqui").
+            if not transcription and fallback_segments:
+                full_text = "".join(fallback_segments).strip()
+                if full_text:
+                    logging.warning(
+                        f"All {segment_count} segments below confidence thresholds — "
+                        f"using fallback transcription: '{full_text}'"
+                    )
+                    return full_text
+
             if not transcription:
                 logging.warning(f"No valid segments found ({segment_count} total, {discarded_count} discarded)")
                 return ""
 
             full_text = "".join(transcription)
             logging.debug(f"Transcription result: '{full_text.strip()}' ({len(transcription)}/{segment_count} segments used)")
-            
+
             return full_text.strip()
             
         except Exception as e:

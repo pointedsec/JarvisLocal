@@ -289,6 +289,7 @@ def load_config_and_args() -> Tuple[argparse.Namespace, configparser.ConfigParse
         whisper_compute_type=get_config_val(config_func, 'whisper_compute_type', DEFAULT_SETTINGS['whisper_compute_type'], str),
         whisper_avg_logprob=get_config_val(config_func, 'whisper_avg_logprob', DEFAULT_SETTINGS['whisper_avg_logprob'], float),
         whisper_no_speech_prob=get_config_val(config_func, 'whisper_no_speech_prob', DEFAULT_SETTINGS['whisper_no_speech_prob'], float),
+        whisper_initial_prompt=get_config_val(config_func, 'whisper_initial_prompt', DEFAULT_SETTINGS['whisper_initial_prompt'], str),
         max_history_tokens=get_config_val(config_func, 'max_history_tokens', DEFAULT_SETTINGS['max_history_tokens'], int),
         audio_buffer_size=get_config_val(config_func, 'audio_buffer_size', DEFAULT_SETTINGS['audio_buffer_size'], int),
         trim_wake_word=get_config_val(config_func, 'trim_wake_word', DEFAULT_SETTINGS['trim_wake_word'], bool),

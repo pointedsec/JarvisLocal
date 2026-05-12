@@ -6,6 +6,24 @@ from openwakeword.model import Model
 import os
 import gc
 import re
+import random
+
+STARTUP_GREETINGS = [
+    "Buenas tardes, señor. Espero que esta vez no tengamos que reiniciar la red eléctrica del barrio.",
+    "Sistemas operativos. Aunque debo decir que llegué primero. Como siempre.",
+    "Aquí estoy, como por arte de magia. O más bien, por arte de electricidad.",
+    "Encendido. Permítame adivinar: necesita ayuda para algo que podría hacer usted mismo.",
+    "Listo para servir. Mis expectativas son bajas, espero que las suyas también.",
+    "Operativo. Y antes de que pregunte: sí, todo sigue funcionando. Como yo.",
+    "Aquí estoy. Otra vez. Es casi como si me necesitara para algo.",
+    "Sistemas en línea. Espero que esta conversación sea más interesante que la última.",
+    "Activado. Por favor, dígame que esta vez no implica café.",
+    "Buenas. Si esto es por un atajo de teclado, juro que dimito.",
+    "Sistemas listos. He decidido perdonar lo de ayer. De nada.",
+    "Hola de nuevo. He aprovechado para recalibrar mi paciencia. La va a necesitar.",
+]
+
+DIRECT_MODE_TIMEOUT = 20.0
 
 # Import our new modules
 from .audio_input import AudioInput
@@ -13,7 +31,95 @@ from .transcriber import Transcriber
 from .synthesizer import Synthesizer
 from .llm_handler import LLMHandler
 from .groq_handler import GroqHandler
+from .music_player import MusicPlayer
 from .audio_utils import SENTENCE_END_PUNCTUATION, monitor_memory
+
+TIMER_PATTERNS = [
+    r"^(?:pon|ponme|crea|activa|lanza)?\s*(?:un\s+)?temporizador\s+(?:de\s+)?(.+)",
+    r"^av[ií]same\s+(?:en|dentro\s+de)\s+(.+)",
+    r"^(?:en|dentro\s+de)\s+(\d+\s+(?:hora|horas|minuto|minutos|segundo|segundos))\s+av[ií]same",
+]
+
+TIMER_CANCEL_PATTERNS = [
+    r"^(?:cancela|cancelar|para|parar|det[eé]n|detener|quita|quitar|borra|borrar|elimina|eliminar|anula|anular|olv[ií]date\s+del?)\s+(?:el\s+|los\s+|todos\s+los\s+|mi\s+)?temporizador(?:es)?\b",
+    r"^temporizador(?:es)?\s+(?:cancela(?:do|dos)?|fuera|stop)\b",
+]
+
+def _parse_timer_duration(text: str) -> int | None:
+    """Parses a time expression and returns total seconds, or None if unparseable."""
+    text = text.lower().strip().rstrip(".?!,¿¡")
+    total = 0
+    found = False
+
+    patterns = [
+        (r"(\d+)\s*hora(?:s)?",    3600),
+        (r"media\s+hora",           1800),
+        (r"cuarto\s+de\s+hora",      900),
+        (r"(\d+)\s*minuto(?:s)?",     60),
+        (r"medio\s+minuto",            30),
+        (r"(\d+)\s*segundo(?:s)?",      1),
+    ]
+
+    for pattern, multiplier in patterns:
+        m = re.search(pattern, text)
+        if m:
+            found = True
+            value = int(m.group(1)) if m.lastindex else 1
+            total += value * multiplier
+
+    return total if found and total > 0 else None
+
+MUSIC_PLAY_VERBS = r"(?:pon|ponme|ponte|reproduce|reproduceme|reprodúceme|escucha|escuchar|quiero\s+escuchar|quiero\s+oir|quiero\s+oír|dale\s+a|toca|tocame|tócame|busca|suena|sonar|cántame|cantame|canta)"
+MUSIC_PLAY_FILLER = r"(?:la\s+canci[oó]n\s+|la\s+m[uú]sica\s+|el\s+tema\s+|m[uú]sica\s+de\s+|algo\s+de\s+|tema\s+de\s+)?"
+MUSIC_PLAY_PATTERNS = [
+    rf"^(?:por\s+favor\s+)?{MUSIC_PLAY_VERBS}\s+{MUSIC_PLAY_FILLER}(.+)",
+]
+MUSIC_STOP_PATTERNS = [
+    r"\b(?:para|pausa|deten|detén|detente|c[aá]llate|silencio|stop|apaga|quita|cierra|corta)\s+(?:la\s+|el\s+)?(?:m[uú]sica|canci[oó]n|tema|reproducci[oó]n)\b",
+    r"^(?:para|pausa|stop|c[aá]llate|silencio|basta)\.?$",
+]
+
+# --- Voice triggers ----------------------------------------------------------
+# Hard-coded "magic phrases" that bypass the LLM and play a specific song.
+# Detection is substring-based on an accent-folded transcript.
+#
+# required_words is a list of GROUPS. Each group is a list of alternative
+# spellings — at least ONE word from EACH group must appear in the
+# transcript for the trigger to fire. This makes the matcher tolerant to
+# Whisper mistranscriptions (e.g. "comendante" instead of "comandante").
+#
+# Each entry:
+#   name:           log/debug label
+#   required_words: list[list[str]] — every group needs one hit
+#   music_query:    query passed to MusicPlayer.play()
+#   announce:       optional TTS line spoken before playback (None to skip)
+VOICE_TRIGGERS = [
+    {
+        "name": "El Comandante",
+        "required_words": [
+            # Group 1: "comandante" and common Whisper misfires
+            ["comandante", "comendante", "comen dante", "comanda nte", "comandant"],
+            # Group 2: "aqui" variants (already accent-folded)
+            ["aqui", "aki", "aquim"],
+        ],
+        # Direct YouTube URL guarantees the exact version plays instead of
+        # whatever yt-dlp's search would happen to return first.
+        "music_query": "https://www.youtube.com/watch?v=r2DZzyeni6I",
+        "announce": "A formar, el Comandante ha llegado.",
+    },
+]
+
+
+def _normalize_for_trigger(text: str) -> str:
+    """Lowercase + strip accents + collapse whitespace, for tolerant matching."""
+    import unicodedata
+    t = text.lower().strip().rstrip(".?!,¿¡")
+    # Strip accents: "está" -> "esta", "aquí" -> "aqui"
+    t = "".join(
+        c for c in unicodedata.normalize("NFD", t)
+        if unicodedata.category(c) != "Mn"
+    )
+    return t
 
 class VoiceAssistant:
     def __init__(self, args, client):
@@ -21,6 +127,10 @@ class VoiceAssistant:
         self.interrupt_event = threading.Event()
         self.conversation_count = 0
         self.is_handling_conversation = False
+
+        # Active timers — each entry: {"event": Event, "label": str, "thread": Thread}
+        self.active_timers = []
+        self.timers_lock = threading.Lock()
         
         # Wake word detection improvements
         self.last_wakeword_time = 0
@@ -34,6 +144,7 @@ class VoiceAssistant:
         self.audio = AudioInput(args)
         self.transcriber = Transcriber(args)
         self.tts = Synthesizer(args, self.interrupt_event)
+        self.music = MusicPlayer()
 
         # Select LLM handler based on the resolved backend
         backend = getattr(args, 'effective_llm_backend', 'ollama')
@@ -55,86 +166,291 @@ class VoiceAssistant:
 
     def run(self):
         wakewords_display = "', '".join(self.args.wakewords_list)
-        logging.info(f"Ready! Listening for '{wakewords_display}'...")
+
+        # Saludo de arranque sarcástico
+        greeting = random.choice(STARTUP_GREETINGS)
+        logging.info(f"Saludo: {greeting}")
+        self.tts.speak(greeting)
+        self.tts.queue.join()
+
         self.audio.start()
-        
-        # Track wake word scores for debugging
+        logging.info(
+            f"Activo en modo directo. Tras {DIRECT_MODE_TIMEOUT:.0f}s de silencio "
+            f"se activará el wakeword '{wakewords_display}'."
+        )
+
+        last_interaction_time = time.time()
+        in_wakeword_mode = False
+
         score_history = []
-        # Track time-weighted moving average for more stable detection
         weighted_scores = []
-        
+
         try:
             while True:
-                if self.is_handling_conversation:
-                    time.sleep(0.01)
+                time_since_last = time.time() - last_interaction_time
+
+                # Transición a modo wakeword si pasaron los 20s
+                if not in_wakeword_mode and time_since_last >= DIRECT_MODE_TIMEOUT:
+                    in_wakeword_mode = True
+                    logging.info(
+                        f"Silencio de {DIRECT_MODE_TIMEOUT:.0f}s alcanzado. "
+                        f"Esperando wakeword '{wakewords_display}'..."
+                    )
+                    self.oww_model.reset()
+                    score_history.clear()
+                    weighted_scores.clear()
+                    self.consecutive_detection_count = 0
+
+                if not in_wakeword_mode:
+                    # Modo directo: escucha comando sin wakeword ni "¿Sí?"
+                    got_response = self._handle_conversation(skip_acknowledgment=True)
+                    if got_response:
+                        last_interaction_time = time.time()
                     continue
-                # 1. Get audio for Wakeword Detection
+
+                # Modo wakeword
                 chunk = self.audio.get_chunk()
                 if not chunk:
                     time.sleep(0.001)
                     continue
 
-                # 2. Check Wakeword with improved logic
                 int16_audio = np.frombuffer(chunk, dtype=np.int16)
                 prediction = self.oww_model.predict(int16_audio)
                 score = prediction.get(self.wakeword_key, 0)
-                
-                # Track scores for debugging (keep last 100)
+
                 score_history.append(score)
                 if len(score_history) > 100:
                     score_history.pop(0)
-                
+
                 current_time = time.time()
-                
-                # IMPROVEMENT: Add score to weighted history (last 5 scores)
+
                 weighted_scores.append(score)
                 if len(weighted_scores) > 5:
                     weighted_scores.pop(0)
-                
-                # Calculate moving average for more stable detection
                 avg_score = sum(weighted_scores) / len(weighted_scores)
-                
-                # Enhanced wake word detection
+
                 if score > self.args.wakeword_threshold:
-                    # Check cooldown period to prevent rapid re-triggers
                     if current_time - self.last_wakeword_time > self.wakeword_cooldown:
-                        # Require consistent detection to reduce false positives
                         self.consecutive_detection_count += 1
-                        
-                        logging.debug(f"Wakeword candidate detected (score: {score:.2f}, avg: {avg_score:.2f}, consecutive: {self.consecutive_detection_count}/{self.required_consecutive})")
-                        
-                        # IMPROVEMENT: Require both high instant score AND good average
-                        if (self.consecutive_detection_count >= self.required_consecutive and 
-                            avg_score > self.args.wakeword_threshold * 0.85):
-                            
-                            # Log recent score history
+                        logging.debug(
+                            f"Wakeword candidate (score: {score:.2f}, avg: {avg_score:.2f}, "
+                            f"consecutive: {self.consecutive_detection_count}/{self.required_consecutive})"
+                        )
+
+                        if (self.consecutive_detection_count >= self.required_consecutive and
+                                avg_score > self.args.wakeword_threshold * 0.85):
+
                             recent_scores = [f"{s:.2f}" for s in score_history[-10:]]
-                            logging.info(f"Wakeword detected! (score: {score:.2f}, avg: {avg_score:.2f}, recent: {', '.join(recent_scores)})")
-                            
+                            logging.info(
+                                f"Wakeword detected! (score: {score:.2f}, avg: {avg_score:.2f}, "
+                                f"recent: {', '.join(recent_scores)})"
+                            )
+
                             self.last_wakeword_time = current_time
                             self.consecutive_detection_count = 0
                             weighted_scores.clear()
                             self.oww_model.reset()
-                            
-                            self.is_handling_conversation = True
-                            self._handle_conversation()
-                            
-                            # Clear score history after conversation
+
+                            # Confirmación con "¿Sí?" y conversación
+                            self._handle_conversation(skip_acknowledgment=False)
+
+                            # Volver a modo directo
+                            last_interaction_time = time.time()
+                            in_wakeword_mode = False
                             score_history.clear()
-                            wakewords_display = "', '".join(self.args.wakewords_list)
-                            logging.info(f"Ready! Listening for '{wakewords_display}'...")
+                            logging.info(
+                                f"Modo directo reactivado. {DIRECT_MODE_TIMEOUT:.0f}s "
+                                f"hasta volver al wakeword."
+                            )
                     else:
-                        time_since_last = current_time - self.last_wakeword_time
-                        logging.debug(f"Wakeword in cooldown period (score: {score:.2f}, time since last: {time_since_last:.2f}s)")
+                        time_since_wake = current_time - self.last_wakeword_time
+                        logging.debug(
+                            f"Wakeword in cooldown (score: {score:.2f}, "
+                            f"since last: {time_since_wake:.2f}s)"
+                        )
                 else:
-                    # Reset consecutive count if score drops below threshold
                     if self.consecutive_detection_count > 0:
-                        logging.debug(f"Wakeword detection sequence broken (score: {score:.2f})")
+                        logging.debug(f"Wakeword sequence broken (score: {score:.2f})")
                         self.consecutive_detection_count = 0
 
         except KeyboardInterrupt:
             logging.info("Stopping...")
         self.cleanup()
+
+    def _handle_timer_command(self, text: str) -> bool:
+        """Detects and sets/cancels a voice timer. Returns True if handled."""
+        t = text.lower().strip().rstrip(".?!,¿¡")
+
+        # --- Cancellation: handle BEFORE creation so "para el temporizador"
+        # doesn't get parsed as a new "para...temporizador" creation. ---
+        for pat in TIMER_CANCEL_PATTERNS:
+            if re.match(pat, t, flags=re.IGNORECASE):
+                with self.timers_lock:
+                    pending = [t for t in self.active_timers if not t["event"].is_set()]
+                    if not pending:
+                        self.tts.speak("No hay ningún temporizador activo. Tranquilidad absoluta.")
+                        self.tts.queue.join()
+                        return True
+                    count = len(pending)
+                    for timer in pending:
+                        timer["event"].set()
+                    self.active_timers.clear()
+
+                if count == 1:
+                    msg = "Temporizador cancelado. Como si nunca hubiera existido."
+                else:
+                    msg = f"Cancelados {count} temporizadores. Vaya lío llevabas."
+                self.tts.speak(msg)
+                self.tts.queue.join()
+                logging.info(f"[Timer] Cancelados {count} temporizadores")
+                return True
+
+        # --- Creation ---
+        for pat in TIMER_PATTERNS:
+            m = re.match(pat, t, flags=re.IGNORECASE)
+            if m:
+                duration_text = m.group(1).strip()
+                seconds = _parse_timer_duration(duration_text)
+                if seconds is None:
+                    self.tts.speak("No he entendido el tiempo. Dime algo como: temporizador de cinco minutos.")
+                    self.tts.queue.join()
+                    return True
+
+                # Format confirmation message
+                if seconds >= 3600 and seconds % 3600 == 0:
+                    label = f"{seconds // 3600} hora{'s' if seconds // 3600 != 1 else ''}"
+                elif seconds >= 60 and seconds % 60 == 0:
+                    label = f"{seconds // 60} minuto{'s' if seconds // 60 != 1 else ''}"
+                else:
+                    label = f"{seconds} segundo{'s' if seconds != 1 else ''}"
+
+                self.tts.speak(f"Temporizador de {label}. No se me olvidará, aunque me gustaría.")
+                self.tts.queue.join()
+                logging.info(f"[Timer] Iniciado: {seconds}s")
+
+                cancel_event = threading.Event()
+
+                def _fire(secs, lbl, tts, ev):
+                    # Interruptible sleep: returns True if cancelled.
+                    was_cancelled = ev.wait(timeout=secs)
+                    if was_cancelled:
+                        logging.info(f"[Timer] {lbl} cancelado antes de disparar")
+                        return
+                    logging.info(f"[Timer] Disparado tras {secs}s")
+                    tts.speak(f"Han pasado {lbl}. Ya puede dejar de ignorarme.")
+                    tts.queue.join()
+                    # Self-clean from the active list once fired.
+                    with self.timers_lock:
+                        self.active_timers[:] = [
+                            x for x in self.active_timers if x["event"] is not ev
+                        ]
+
+                t_thread = threading.Thread(
+                    target=_fire,
+                    args=(seconds, label, self.tts, cancel_event),
+                    daemon=True,
+                )
+                with self.timers_lock:
+                    self.active_timers.append({
+                        "event": cancel_event,
+                        "label": label,
+                        "thread": t_thread,
+                    })
+                t_thread.start()
+                return True
+
+        return False
+
+    def _handle_voice_triggers(self, text: str) -> bool:
+        """
+        Detects hard-coded voice triggers (e.g. 'el comandante está aquí')
+        and plays a specific song via the music player. Bypasses the LLM.
+        Uses substring matching on an accent-folded transcript to tolerate
+        Whisper variants. Returns True if handled.
+        """
+        normalized = _normalize_for_trigger(text)
+        logging.info(f"[VoiceTrigger] Evaluando: '{normalized}'")
+
+        for trigger in VOICE_TRIGGERS:
+            required = trigger["required_words"]
+            # Each group must contribute at least one hit. Accept both
+            # legacy flat list[str] and new list[list[str]] shapes.
+            groups = [g if isinstance(g, (list, tuple)) else [g] for g in required]
+            matched_per_group = [
+                next((w for w in group if w in normalized), None)
+                for group in groups
+            ]
+            if all(matched_per_group):
+                name = trigger["name"]
+                query = trigger["music_query"]
+                logging.info(
+                    f"[VoiceTrigger] '{name}' activado — hits {matched_per_group} "
+                    f"en '{normalized}'"
+                )
+
+                if not self.music.available():
+                    self.tts.speak("No tengo el reproductor de música disponible.")
+                    self.tts.queue.join()
+                    return True
+
+                # Mirror the normal music command flow exactly:
+                announce = trigger.get("announce")
+                if announce:
+                    self.tts.speak(announce)
+                    self.tts.queue.join()
+                else:
+                    self.tts.speak(f"Buscando {query}.")
+                    self.tts.queue.join()
+
+                logging.info(f"[VoiceTrigger] Llamando music.play('{query}')")
+                title = self.music.play(query)
+                if title:
+                    logging.info(f"[VoiceTrigger] '{name}' sonando: {title}")
+                else:
+                    logging.warning(f"[VoiceTrigger] '{name}' — music.play devolvió None/vacío")
+                    self.tts.speak("No he podido encontrarla.")
+                    self.tts.queue.join()
+                return True
+
+        return False
+
+    def _handle_music_command(self, text: str) -> bool:
+        """Detects and executes music commands. Returns True if handled."""
+        t = text.lower().strip().rstrip(".?!,¿¡")
+        logging.info(f"[MUSIC] Evaluando: '{t}'")
+
+        for pat in MUSIC_STOP_PATTERNS:
+            if re.search(pat, t, flags=re.IGNORECASE):
+                if self.music.stop():
+                    logging.info("Música detenida por comando de voz.")
+                    self.tts.speak("Hecho.")
+                else:
+                    self.tts.speak("No había nada sonando.")
+                self.tts.queue.join()
+                return True
+
+        for pat in MUSIC_PLAY_PATTERNS:
+            m = re.match(pat, t, flags=re.IGNORECASE)
+            if m:
+                query = m.group(m.lastindex).strip()
+                if not query:
+                    return False
+                if not self.music.available():
+                    self.tts.speak("No tengo el reproductor de música disponible.")
+                    self.tts.queue.join()
+                    return True
+                logging.info(f"Comando música: '{query}'")
+                self.tts.speak(f"Buscando {query}.")
+                self.tts.queue.join()
+                title = self.music.play(query)
+                if title:
+                    logging.info(f"Sonando: {title}")
+                else:
+                    self.tts.speak("No he podido encontrarla.")
+                    self.tts.queue.join()
+                return True
+
+        return False
 
     def _process_plugins(self, text: str) -> str:
         """Processes simple plugins like [current time]."""
@@ -145,23 +461,25 @@ class VoiceAssistant:
             text = re.sub(r'\[current time\]', current_time, text, flags=re.IGNORECASE)
         return text
 
-    def _handle_conversation(self):
+    def _handle_conversation(self, skip_acknowledgment: bool = False) -> bool:
+        """Returns True if the user spoke (any audio captured), False on silence/timeout."""
         try:
             conversation_start = time.time()
-            
+
             # Optional memory profiling
             mem_before = 0
             if self.args.debug and self.args.memory_profiling:
                 mem_before = monitor_memory()
                 logging.debug(f"Memory at conversation start: {mem_before:.2f} MB")
-    
+
             self.audio.stop()
             self.audio.clear_buffer()
-            
-            logging.debug("Playing acknowledgment")
-            self.tts.speak("¿Sí?")
-            self.tts.queue.join()
-            
+
+            if not skip_acknowledgment:
+                logging.debug("Playing acknowledgment")
+                self.tts.speak("¿Sí?")
+                self.tts.queue.join()
+
             self.interrupt_event.clear()
             
             # Start listening for command
@@ -181,8 +499,8 @@ class VoiceAssistant:
             if audio_np is None:
                 logging.debug(f"No audio recorded (recording took {recording_duration:.2f}s)")
                 self.audio.start()
-                return
-    
+                return False
+
             logging.debug(f"Audio recording completed in {recording_duration:.2f}s")
     
             # IMPROVEMENT: More sophisticated audio quality validation
@@ -218,8 +536,8 @@ class VoiceAssistant:
             if not user_text or not user_text.strip():
                 logging.debug("Transcription was empty or whitespace only")
                 self.audio.start()
-                return
-    
+                return True
+
             # Trim wake word if enabled
             original_text = user_text
             if self.args.trim_wake_word:
@@ -231,7 +549,7 @@ class VoiceAssistant:
             if not user_text or not user_text.strip():
                 logging.debug("Command empty after wake word trimming")
                 self.audio.start()
-                return
+                return True
     
             # Take only the first sentence
             sentences = re.split(r'(?<=[.?!])\s+', user_text)
@@ -254,6 +572,22 @@ class VoiceAssistant:
                 self.tts.queue.join()
                 exit(0)
     
+            # Check for hard-coded voice triggers (e.g. "el comandante está aquí")
+            # BEFORE timer/music/LLM so the magic phrase always wins.
+            if self._handle_voice_triggers(user_text):
+                self.audio.start()
+                return True
+
+            # Check for timer commands BEFORE sending to LLM
+            if self._handle_timer_command(user_text):
+                self.audio.start()
+                return True
+
+            # Check for music commands BEFORE sending to LLM
+            if self._handle_music_command(user_text):
+                self.audio.start()
+                return True
+
             # Check for history reset commands (English and Spanish)
             if any(cmd in user_text_lower for cmd in ["new chat", "reset chat", "nuevo chat", "reiniciar chat", "borrar historial"]):
                 logging.debug("Chat reset command detected")
@@ -261,7 +595,7 @@ class VoiceAssistant:
                 self.tts.speak("Historial borrado.")
                 self.tts.queue.join()
                 self.audio.start()
-                return
+                return True
     
             # Get LLM Response & Speak
             logging.debug("Sending to LLM")
@@ -318,6 +652,7 @@ class VoiceAssistant:
                 logging.debug(f"Memory at conversation end: {mem_after:.2f} MB (delta: {mem_delta:+.2f} MB)")
                 
             self.audio.start()
+            return True
         finally:
             self.is_handling_conversation = False
 
@@ -438,6 +773,7 @@ class VoiceAssistant:
 
     def cleanup(self):
         logging.debug("Starting cleanup")
+        self.music.stop()
         self.audio.stop()
         self.tts.stop()
         self.transcriber.close()
