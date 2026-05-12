@@ -102,7 +102,9 @@ VOICE_TRIGGERS = [
             # Group 2: "aqui" variants (already accent-folded)
             ["aqui", "aki", "aquim"],
         ],
-        "music_query": "Erika La marcha alemana",
+        # Direct YouTube URL guarantees the exact version plays instead of
+        # whatever yt-dlp's search would happen to return first.
+        "music_query": "https://www.youtube.com/watch?v=r2DZzyeni6I",
         "announce": "A formar, el Comandante ha llegado.",
     },
 ]
