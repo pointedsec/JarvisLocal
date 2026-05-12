@@ -91,7 +91,12 @@ VOICE_TRIGGERS = [
     {
         "name": "El Comandante",
         "patterns": [
-            r"\bel\s+comandante\s+est[aá]\s+aqu[ií]\b",
+            # Flexible: "comandante" + "aqui" with anything in between
+            # (handles "ya", "ya ha llegado", missing article, word order, etc.)
+            r"\bcomandante\b.{0,30}\baqu[ií]\b",
+            r"\baqu[ií]\b.{0,30}\bcomandante\b",
+            r"\bllega(?:do)?\s+el\s+comandante\b",
+            r"\bha\s+llegado\s+el\s+comandante\b",
         ],
         "music_query": "Erika marcha alemana",
         "announce": "A formar, el Comandante ha llegado.",
