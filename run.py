@@ -11,7 +11,7 @@ import sys
 import os
 
 # Add the src directory to the path to allow imports from voice_assistant
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "src")))
 
 from voice_assistant.assistant import main
 

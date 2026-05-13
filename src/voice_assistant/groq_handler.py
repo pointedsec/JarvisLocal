@@ -1,6 +1,6 @@
 import logging
 import gc
-from .audio_utils import MAX_HISTORY_MESSAGES, SENTENCE_END_PUNCTUATION
+from .audio_utils import MAX_HISTORY_MESSAGES
 from .web_search import (
     is_football_query,
     needs_web_search,
@@ -22,7 +22,7 @@ class GroqHandler:
         self.reset_history()
 
     def reset_history(self):
-        self.messages = [{'role': 'system', 'content': self.args.system_prompt}]
+        self.messages = [{"role": "system", "content": self.args.system_prompt}]
 
     def _build_augmented_prompt(self, user_text: str) -> str:
         """
@@ -55,7 +55,7 @@ class GroqHandler:
     def chat_stream(self, user_text: str):
         """Yields tokens from the Groq API response."""
         augmented_text = self._build_augmented_prompt(user_text)
-        self.messages.append({'role': 'user', 'content': augmented_text})
+        self.messages.append({"role": "user", "content": augmented_text})
         self._prune_history()
 
         full_response = ""
@@ -80,11 +80,11 @@ class GroqHandler:
                 f"acumulado≈{self.total_prompt_tokens + self.total_completion_tokens}"
             )
 
-            self.messages.append({'role': 'assistant', 'content': full_response})
+            self.messages.append({"role": "assistant", "content": full_response})
 
         except Exception as e:
             logging.error(f"Groq Error: {e}")
-            if self.messages and self.messages[-1]['role'] == 'user':
+            if self.messages and self.messages[-1]["role"] == "user":
                 self.messages.pop()
             yield None
 
@@ -99,6 +99,6 @@ class GroqHandler:
 
         if len(self.messages) > (max_pairs * 2 + 1):
             system_prompt = self.messages[0]
-            recent = self.messages[-(max_pairs * 2):]
+            recent = self.messages[-(max_pairs * 2) :]
             self.messages = [system_prompt] + recent
             gc.collect()

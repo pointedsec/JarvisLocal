@@ -3,12 +3,12 @@ import json
 import os
 import queue
 import threading
-import time
 import numpy as np
 import sounddevice as sd
 from scipy.signal import resample
 from piper import PiperVoice
-from .audio_utils import RATE, MAX_TTS_ERRORS
+from .audio_utils import MAX_TTS_ERRORS
+
 
 class Synthesizer:
     def __init__(self, args, interrupt_event: threading.Event):
@@ -18,12 +18,12 @@ class Synthesizer:
         self.stop_event = threading.Event()
         self.is_speaking_event = threading.Event()
         self.has_failed = threading.Event()
-        
+
         self.voice = None
         self.sample_rate = 16000
 
         self._load_model()
-        
+
         self.thread = threading.Thread(target=self._worker, daemon=True)
         self.thread.start()
 
@@ -34,9 +34,9 @@ class Synthesizer:
             if not os.path.exists(config_path):
                 raise FileNotFoundError(f"Config not found: {config_path}")
 
-            with open(config_path, 'r') as f:
+            with open(config_path, "r") as f:
                 config = json.load(f)
-                self.sample_rate = int(config['audio']['sample_rate'])
+                self.sample_rate = int(config["audio"]["sample_rate"])
 
             self.voice = PiperVoice.load(self.args.piper_model_path, config_path)
             logging.info(f"Loaded Piper voice. Rate: {self.sample_rate}Hz")
@@ -47,7 +47,7 @@ class Synthesizer:
     def _worker(self):
         consecutive_errors = 0
         target_sample_rate = 48000  # Match device default sample rate
-        
+
         while not self.stop_event.is_set():
             text = None
             try:
@@ -60,19 +60,23 @@ class Synthesizer:
                     samplerate=target_sample_rate,
                     device=self.args.piper_output_device_index,
                     channels=1,
-                    dtype='int16'
+                    dtype="int16",
                 ) as stream:
                     for audio_chunk in self.voice.synthesize(text):
                         if self.interrupt_event.is_set():
                             break
-                        
-                        audio_np = np.frombuffer(audio_chunk.audio_int16_bytes, dtype=np.int16)
-                        
+
+                        audio_np = np.frombuffer(
+                            audio_chunk.audio_int16_bytes, dtype=np.int16
+                        )
+
                         # Resample if necessary
                         if self.sample_rate != target_sample_rate:
-                            num_samples = round(len(audio_np) * target_sample_rate / self.sample_rate)
+                            num_samples = round(
+                                len(audio_np) * target_sample_rate / self.sample_rate
+                            )
                             audio_np = resample(audio_np, num_samples)
-                        
+
                         stream.write(audio_np.astype(np.int16))
 
                 consecutive_errors = 0
@@ -87,7 +91,7 @@ class Synthesizer:
             finally:
                 if text is not None:
                     self.queue.task_done()
-                
+
                 if self.queue.empty():
                     self.is_speaking_event.clear()
 
@@ -99,7 +103,7 @@ class Synthesizer:
         """Ensure all resources are released on shutdown"""
         self.stop_event.set()
         self.clear_queue()  # Clear before stopping
-        self.queue.put(None) # Sentinel to stop the worker
+        self.queue.put(None)  # Sentinel to stop the worker
         self.thread.join(timeout=5.0)
 
         # Clean up voice model

@@ -7,13 +7,18 @@ The main entry point for the hands-free Python voice assistant.
 Loads configuration, initializes, and runs the VoiceAssistant class.
 """
 
+from __future__ import annotations
+
 import logging
 import sys
 import tracemalloc
 import warnings
 
 # Suppress the specific onnxruntime UserWarning
-warnings.filterwarnings("ignore", message="Specified provider 'CUDAExecutionProvider' is not in available provider names.")
+warnings.filterwarnings(
+    "ignore",
+    message="Specified provider 'CUDAExecutionProvider' is not in available provider names.",
+)
 # Suppress the pkg_resources deprecation warning from webrtcvad
 warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API")
 
@@ -21,7 +26,12 @@ warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API
 # --- IMPROVEMENT: Top-Level Dependency Check ---
 # Encapsulate critical imports to provide clear error messages if dependencies are missing.
 try:
-    from .config_manager import load_config_and_args, get_ollama_client, get_groq_client, check_internet_connectivity
+    from .config_manager import (
+        load_config_and_args,
+        get_ollama_client,
+        get_groq_client,
+        check_internet_connectivity,
+    )
     from .voice_assistant import VoiceAssistant
 except ImportError as e:
     print(
@@ -59,7 +69,9 @@ def main() -> None:
     logging.info(f"Using LLM backend: {args.llm_backend}")
     logging.info(f"Using Ollama model: {args.ollama_model}")
     logging.info(f"Using Whisper model: {args.whisper_model} on {args.whisper_device}")
-    logging.info(f"Trim wake word from transcription: {'Enabled' if args.trim_wake_word else 'Disabled'}")
+    logging.info(
+        f"Trim wake word from transcription: {'Enabled' if args.trim_wake_word else 'Disabled'}"
+    )
     # ---
 
     # Optional detailed memory tracing
@@ -77,15 +89,19 @@ def main() -> None:
         llm_client = None
         effective_backend = args.llm_backend
 
-        if args.llm_backend == 'groq':
+        if args.llm_backend == "groq":
             llm_client = get_groq_client(args.groq_api_key)
             if llm_client is None:
-                logging.warning("Groq client could not be created. Assistant will run but cannot respond.")
+                logging.warning(
+                    "Groq client could not be created. Assistant will run but cannot respond."
+                )
 
-        elif args.llm_backend == 'ollama':
+        elif args.llm_backend == "ollama":
             llm_client = get_ollama_client(args.ollama_host)
             if llm_client is None:
-                logging.warning("Ollama server not reachable. Assistant will run but cannot respond.")
+                logging.warning(
+                    "Ollama server not reachable. Assistant will run but cannot respond."
+                )
 
         else:  # 'auto'
             logging.info("Backend set to 'auto': checking internet connectivity...")
@@ -93,19 +109,25 @@ def main() -> None:
                 logging.info("Internet reachable — attempting to use Groq.")
                 llm_client = get_groq_client(args.groq_api_key)
                 if llm_client is not None:
-                    effective_backend = 'groq'
+                    effective_backend = "groq"
                     logging.info(f"Using Groq backend with model: {args.groq_model}")
                 else:
-                    logging.warning("Groq client could not be created (check API key). Falling back to Ollama.")
-                    effective_backend = 'ollama'
+                    logging.warning(
+                        "Groq client could not be created (check API key). Falling back to Ollama."
+                    )
+                    effective_backend = "ollama"
             else:
-                logging.info("No internet connection detected — using Ollama as fallback.")
-                effective_backend = 'ollama'
+                logging.info(
+                    "No internet connection detected — using Ollama as fallback."
+                )
+                effective_backend = "ollama"
 
-            if effective_backend == 'ollama':
+            if effective_backend == "ollama":
                 llm_client = get_ollama_client(args.ollama_host)
                 if llm_client is None:
-                    logging.warning("Ollama server not reachable. Assistant will run but cannot respond.")
+                    logging.warning(
+                        "Ollama server not reachable. Assistant will run but cannot respond."
+                    )
 
         # Store the resolved backend so VoiceAssistant/LLMHandler can use it.
         args.effective_llm_backend = effective_backend
@@ -127,11 +149,11 @@ def main() -> None:
         # Ensure cleanup runs even if initialization failed
         if assistant:
             assistant.cleanup()
-        
+
         # Log memory usage if enabled
         if args.debug and tracemalloc.is_tracing():
             snapshot = tracemalloc.take_snapshot()
-            top_stats = snapshot.statistics('lineno')
+            top_stats = snapshot.statistics("lineno")
             logging.debug("--- Top 10 Memory Allocations ---")
             for stat in top_stats[:10]:
                 logging.debug(stat)
