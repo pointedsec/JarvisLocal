@@ -7,6 +7,8 @@ The main entry point for the hands-free Python voice assistant.
 Loads configuration, initializes, and runs the VoiceAssistant class.
 """
 
+from __future__ import annotations
+
 import logging
 import sys
 import tracemalloc
